@@ -3,9 +3,9 @@
  *
  * The file contains the implementations of the method to
  * fill items, actions & attributes in their corresponding
- * arrays, and then generate rte_flow rule.
+ * arrays, and then generate or update an rte_flow rule.
  *
- * After the generation. The rule goes to validation then
+ * After the generation the rule goes to validation then
  * creation state and then return the results.
  */
 
@@ -32,6 +32,39 @@ fill_attributes(struct rte_flow_attr *attr,
 			attr->transfer = 1;
 	}
 	attr->group = group;
+}
+
+static void
+fill_target_flow_attributes(struct rte_flow_attr *attr, uint16_t group)
+{
+	if (!attr) {
+		return;
+	}
+
+	attr->ingress = 1;
+	attr->group = group;
+}
+
+struct rte_flow *
+generate_target_flow(uint16_t port_id,
+	uint16_t group,
+	struct rte_flow_error *error)
+{
+	struct rte_flow_attr attr;
+	struct rte_flow_item items[3];
+	struct rte_flow_action actions[2];
+	struct rte_flow *flow = NULL;
+
+	memset(&attr, 0, sizeof(struct rte_flow_attr));
+	memset(items, 0, sizeof(items));
+	memset(actions, 0, sizeof(actions));
+
+	fill_target_flow_attributes(&attr, group);
+	fill_target_flow_items(items);
+	fill_target_flow_actions(actions);
+
+	flow = rte_flow_create(port_id, &attr, items, actions, error);
+	return flow;
 }
 
 struct rte_flow *
@@ -64,6 +97,38 @@ generate_flow(uint16_t port_id,
 
 	fill_items(items, flow_items, outer_ip_src);
 
-	flow = rte_flow_create(port_id, &attr, items, actions, error);
-	return flow;
+	return rte_flow_create(port_id, &attr, items, actions, error);
+}
+
+int
+update_flow(struct rte_flow *flow,
+	uint16_t port_id,
+	uint16_t group,
+	uint64_t *flow_attrs,
+	uint64_t *flow_items,
+	uint64_t *flow_actions,
+	uint16_t next_table,
+	uint32_t outer_ip_src,
+	uint16_t hairpinq,
+	uint64_t encap_data,
+	uint64_t decap_data,
+	struct rte_flow_error *error)
+{
+//	struct rte_flow_attr attr;
+	struct rte_flow_item items[MAX_ITEMS_NUM];
+	struct rte_flow_action actions[MAX_ACTIONS_NUM];
+
+	memset(items, 0, sizeof(items));
+	memset(actions, 0, sizeof(actions));
+//	memset(&attr, 0, sizeof(struct rte_flow_attr));
+
+//	fill_attributes(&attr, flow_attrs, group);
+
+/*	fill_actions(actions, flow_actions,
+		outer_ip_src, next_table, hairpinq,
+		encap_data, decap_data);*/
+
+	fill_items(items, flow_items, outer_ip_src);
+
+	return rte_flow_update(port_id, flow, items, actions, error);
 }

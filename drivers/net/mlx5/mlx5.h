@@ -1201,6 +1201,10 @@ struct rte_flow *mlx5_flow_create(struct rte_eth_dev *dev,
 				  const struct rte_flow_item items[],
 				  const struct rte_flow_action actions[],
 				  struct rte_flow_error *error);
+int mlx5_flow_update(struct rte_eth_dev *dev, struct rte_flow *flow,
+				  const struct rte_flow_item items[],
+				  const struct rte_flow_action actions[],
+				  struct rte_flow_error *error);
 int mlx5_flow_destroy(struct rte_eth_dev *dev, struct rte_flow *flow,
 		      struct rte_flow_error *error);
 void mlx5_flow_list_flush(struct rte_eth_dev *dev, uint32_t *list, bool active);

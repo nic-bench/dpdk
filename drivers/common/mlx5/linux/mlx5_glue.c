@@ -573,6 +573,7 @@ mlx5_glue_dv_create_flow_matcher(struct ibv_context *context,
 #ifdef HAVE_IBV_FLOW_DV_SUPPORT
 #ifdef HAVE_MLX5DV_DR
 	(void)context;
+    dbg("DV DR MATCHER\n");
 	return mlx5dv_dr_matcher_create(tbl, matcher_attr->priority,
 					matcher_attr->match_criteria_enable,
 					matcher_attr->match_mask);
@@ -597,26 +598,39 @@ mlx5_glue_dv_create_flow(void *matcher,
 {
 #ifdef HAVE_IBV_FLOW_DV_SUPPORT
 #ifdef HAVE_MLX5DV_DR
-	return mlx5dv_dr_rule_create(matcher, match_value, num_actions,
+	dbg("DV DR RULE CREATE\n");
+        return mlx5dv_dr_rule_create(matcher, match_value, num_actions,
+                                     (struct mlx5dv_dr_action **)actions);
+#else
+       size_t i;
+       struct mlx5dv_flow_action_attr actions_attr[8];
+
+       if (num_actions > 8)
+               return NULL;
+       for (i = 0; i < num_actions; i++)
+               actions_attr[i] =
+                       *((struct mlx5dv_flow_action_attr *)(actions[i]));
+       return mlx5dv_create_flow(matcher, match_value,
+                                 num_actions, actions_attr);
+#endif
+#endif
+}
+
+static int
+mlx5_glue_dv_update_flow(void *flow_id,
+			 void *match_value,
+			 size_t num_actions,
+			 void *actions[])
+{
+#ifdef HAVE_MLX5DV_DR
+	return mlx5dv_dr_rule_update(flow_id, match_value, num_actions,
 				     (struct mlx5dv_dr_action **)actions);
 #else
-	size_t i;
-	struct mlx5dv_flow_action_attr actions_attr[8];
-
-	if (num_actions > 8)
-		return NULL;
-	for (i = 0; i < num_actions; i++)
-		actions_attr[i] =
-			*((struct mlx5dv_flow_action_attr *)(actions[i]));
-	return mlx5dv_create_flow(matcher, match_value,
-				  num_actions, actions_attr);
-#endif
-#else
-	(void)matcher;
+	(void)flow_id;
 	(void)match_value;
 	(void)num_actions;
-	(void)actions;
-	return NULL;
+    (void)actions;
+	assert(false);
 #endif
 }
 
@@ -1388,6 +1402,7 @@ const struct mlx5_glue *mlx5_glue = &(const struct mlx5_glue) {
 	.dv_create_flow_action_aso = mlx5_glue_dv_create_flow_action_aso,
 	.dr_create_flow_action_default_miss =
 		mlx5_glue_dr_create_flow_action_default_miss,
+	.dv_update_flow = mlx5_glue_dv_update_flow,
 	.dv_destroy_flow = mlx5_glue_dv_destroy_flow,
 	.dv_destroy_flow_matcher = mlx5_glue_dv_destroy_flow_matcher,
 	.dv_open_device = mlx5_glue_dv_open_device,

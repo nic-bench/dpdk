@@ -2196,6 +2196,37 @@ port_flow_create(portid_t port_id,
 	return 0;
 }
 
+/** Update flow rule. */
+int
+port_flow_update(portid_t port_id,
+		 const uint32_t rule,
+		 const struct rte_flow_item *pattern,
+		 const struct rte_flow_action *actions)
+{
+	struct rte_port *port;
+	struct port_flow *pf;
+	struct rte_flow_error error;
+	int ret = 0;
+
+	if (port_id_is_invalid(port_id, ENABLED_WARN) ||
+	    port_id == (portid_t)RTE_PORT_ALL)
+		return -EINVAL;
+	port = &ports[port_id];
+	for (pf = port->flow_list; pf; pf = pf->next)
+		if (pf->id == rule)
+			break;
+	if (!pf) {
+		printf("Flow rule #%u not found\n", pf->id);
+		return -ENOENT;
+	}
+
+    ret = rte_flow_update(port_id, pf->flow, pattern, actions, &error);
+	if (ret < 0)
+		return port_flow_complain(&error);
+	printf("Flow rule #%u updated\n", pf->id);
+	return 0;
+}
+
 /** Destroy a number of flow rules. */
 int
 port_flow_destroy(portid_t port_id, uint32_t n, const uint32_t *rule)

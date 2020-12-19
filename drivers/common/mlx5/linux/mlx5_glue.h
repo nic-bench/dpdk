@@ -26,6 +26,8 @@
 #define MLX5_GLUE_VERSION ""
 #endif
 
+#define dbg(args...)
+
 #ifndef HAVE_IBV_DEVICE_COUNTERS_SET_V42
 struct ibv_counter_set;
 struct ibv_counter_set_data;
@@ -247,6 +249,8 @@ struct mlx5_glue {
 		 struct mlx5dv_flow_matcher_attr *matcher_attr,
 		 void *tbl);
 	void *(*dv_create_flow)(void *matcher, void *match_value,
+			  size_t num_actions, void *actions[]);
+	int (*dv_update_flow)(void *flow, void *match_value,
 			  size_t num_actions, void *actions[]);
 	void *(*dv_create_flow_action_counter)(void *obj, uint32_t  offset);
 	void *(*dv_create_flow_action_dest_ibv_qp)(void *qp);

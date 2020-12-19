@@ -900,6 +900,23 @@ add_vxlan_decap(struct rte_flow_action *actions,
 }
 
 void
+fill_target_flow_actions(struct rte_flow_action *actions)
+{
+	if (!actions) {
+		return;
+	}
+
+	static struct rte_flow_action_queue queue_action = { .index = 0 };
+
+	actions[0].type = RTE_FLOW_ACTION_TYPE_QUEUE;
+	actions[0].conf = &queue_action;
+
+	actions[1].type = RTE_FLOW_ACTION_TYPE_END;
+
+	return;
+}
+
+void
 fill_actions(struct rte_flow_action *actions, uint64_t *flow_actions,
 	uint32_t counter, uint16_t next_table, uint16_t hairpinq,
 	uint64_t encap_data, uint64_t decap_data)

@@ -76,6 +76,13 @@ struct rte_flow_ops {
 		 const struct rte_flow_item [],
 		 const struct rte_flow_action [],
 		 struct rte_flow_error *);
+	/** See rte_flow_update(). */
+	int (*update)
+		(struct rte_eth_dev *,
+		 struct rte_flow *,
+		 const struct rte_flow_item [],
+		 const struct rte_flow_action [],
+		 struct rte_flow_error *);
 	/** See rte_flow_destroy(). */
 	int (*destroy)
 		(struct rte_eth_dev *,

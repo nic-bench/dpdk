@@ -6226,6 +6226,8 @@ flow_dv_prepare(struct rte_eth_dev *dev,
 	}
 	dev_handle = mlx5_ipool_zmalloc(priv->sh->ipool[MLX5_IPOOL_MLX5_FLOW],
 				   &handle_idx);
+    dbg("IPOOL ALLOC IDX %d\n",handle_idx);
+
 	if (!dev_handle) {
 		rte_flow_error_set(error, ENOMEM,
 				   RTE_FLOW_ERROR_TYPE_UNSPECIFIED, NULL,
@@ -7632,7 +7634,7 @@ flow_dv_translate_item_source_vport(void *matcher, void *key,
 static int
 flow_dv_translate_item_port_id(struct rte_eth_dev *dev, void *matcher,
 			       void *key, const struct rte_flow_item *item,
-			       const struct rte_flow_attr *attr)
+			       bool is_transfer)
 {
 	const struct rte_flow_item_port_id *pid_m = item ? item->mask : NULL;
 	const struct rte_flow_item_port_id *pid_v = item ? item->spec : NULL;
@@ -7656,7 +7658,7 @@ flow_dv_translate_item_port_id(struct rte_eth_dev *dev, void *matcher,
 		 * save the extra vport match.
 		 */
 		if (mask == 0xffff && priv->vport_id == 0xffff &&
-		    priv->pf_bond < 0 && attr->transfer)
+		    priv->pf_bond < 0 && is_transfer)
 			flow_dv_translate_item_source_vport
 				(matcher, key, priv->vport_id, mask);
 		else
@@ -10299,7 +10301,7 @@ flow_dv_translate(struct rte_eth_dev *dev,
 		switch (item_type) {
 		case RTE_FLOW_ITEM_TYPE_PORT_ID:
 			flow_dv_translate_item_port_id
-				(dev, match_mask, match_value, items, attr);
+				(dev, match_mask, match_value, items, attr->transfer);
 			last_item = MLX5_FLOW_ITEM_PORT_ID;
 			break;
 		case RTE_FLOW_ITEM_TYPE_ETH:
@@ -10328,6 +10330,7 @@ flow_dv_translate(struct rte_eth_dev *dev,
 		case RTE_FLOW_ITEM_TYPE_IPV4:
 			mlx5_flow_tunnel_ip_check(items, next_protocol,
 						  &item_flags, &tunnel);
+            dbg("IPV4 set mm %p, mv %p",match_mask, match_value);
 			flow_dv_translate_item_ipv4(match_mask, match_value,
 						    items, tunnel,
 						    dev_flow->dv.group);
@@ -10525,7 +10528,7 @@ flow_dv_translate(struct rte_eth_dev *dev,
 	if (!(item_flags & MLX5_FLOW_ITEM_PORT_ID) &&
 	    (priv->representor || priv->master)) {
 		if (flow_dv_translate_item_port_id(dev, match_mask,
-						   match_value, NULL, attr))
+						   match_value, NULL, attr->transfer))
 			return -rte_errno;
 	}
 #ifdef RTE_LIBRTE_MLX5_DEBUG
@@ -10722,7 +10725,6 @@ flow_dv_apply(struct rte_eth_dev *dev, struct rte_flow *flow,
 	int idx;
 	struct mlx5_flow_workspace *wks = mlx5_flow_get_thread_workspace();
 	struct mlx5_flow_rss_desc *rss_desc = &wks->rss_desc;
-
 	MLX5_ASSERT(wks);
 	if (rss_desc->shared_rss) {
 		dh = wks->flows[wks->flow_idx - 1].handle;
@@ -10731,8 +10733,15 @@ flow_dv_apply(struct rte_eth_dev *dev, struct rte_flow *flow,
 	}
 	for (idx = wks->flow_idx - 1; idx >= 0; idx--) {
 		dev_flow = &wks->flows[idx];
-		dv = &dev_flow->dv;
+
+
+    dv = &dev_flow->dv;
+
+        dbg("DV CREATE FLOW %p dev_flow %p, IDX %d/%d DV %p\n",flow, dev_flow, idx,wks->flow_idx, dv);
+        dbg("DEV %p, sh %p, idx %d\n",dev,priv->sh->ipool[MLX5_IPOOL_MLX5_FLOW], flow->dev_handles );
 		dh = dev_flow->handle;
+		mlx5_ipool_get(priv->sh->ipool[MLX5_IPOOL_MLX5_FLOW],
+				    flow->dev_handles);
 		dv_h = &dh->dvh;
 		n = dv->actions_n;
 		if (dh->fate_action == MLX5_FLOW_FATE_DROP) {
@@ -10819,6 +10828,293 @@ flow_dv_matcher_remove_cb(struct mlx5_cache_list *list __rte_unused,
 	claim_zero(mlx5_flow_os_destroy_flow_matcher(cache->matcher_object));
 	mlx5_free(cache);
 }
+
+
+
+/**
+ * Modify the flow in the NIC, lock free,
+ * (mutex should be acquired by caller).
+ *
+ * @param[in] dev
+ *   Pointer to the Ethernet device structure.
+ * @param[in, out] flow
+ *   Pointer to flow structure.
+ * @param[out] error
+ *   Pointer to error structure.
+ *
+ * @return
+ *   0 on success, a negative errno value otherwise and rte_errno is set.
+ */
+static int
+flow_dv_update(struct rte_eth_dev *dev,
+        struct rte_flow *flow,
+		const struct rte_flow_item items[],
+		struct rte_flow_error *error)
+{
+	struct mlx5_flow_handle_dv *dv_h;
+	int err;
+    dbg("DV UPDATE \n");
+	if (!flow)
+		return;
+
+    struct mlx5_flow_handle *dh;
+	uint32_t handle_idx;
+	struct mlx5_priv *priv = dev->data->dev_private;
+
+	handle_idx = flow->dev_handles;
+		dh = mlx5_ipool_get(priv->sh->ipool[MLX5_IPOOL_MLX5_FLOW],
+				    handle_idx);
+
+		if (!dh)
+			return -1;
+		dv_h = &dh->dvh;
+        int group = flow->is_not_root; // Place?
+
+	    struct mlx5_flow_dv_matcher* matcher = dv_h->matcher;
+
+
+        uint64_t item_flags = 0;
+        uint64_t last_item = 0;
+	    struct mlx5_flow_dv_match_params value = {0};
+		value.size = matcher->mask.size;
+
+        void *match_mask = matcher->mask.buf;
+        void *match_value = value.buf;
+        uint8_t next_protocol = 0xff;
+        //Support for a few fields only. We're not Mellanox engineers :)
+        for (; items->type != RTE_FLOW_ITEM_TYPE_END; items++) {
+            int tunnel = !!(item_flags & MLX5_FLOW_LAYER_TUNNEL);
+            int item_type = items->type;
+
+            dbg("Item type %d\n", item_type);
+            if (!mlx5_flow_os_item_supported(item_type))
+                return rte_flow_error_set(error, ENOTSUP,
+                              RTE_FLOW_ERROR_TYPE_ITEM,
+                              NULL, "item not supported");
+            switch (item_type) {
+            case RTE_FLOW_ITEM_TYPE_ETH:
+
+                dbg("ETH\n");
+                flow_dv_translate_item_eth(match_mask, match_value,
+                               items, tunnel,
+                               group);
+                last_item = tunnel ? MLX5_FLOW_LAYER_INNER_L2 :
+                             MLX5_FLOW_LAYER_OUTER_L2;
+                break;
+/*            case RTE_FLOW_ITEM_TYPE_VLAN:
+                flow_dv_translate_item_vlan(dev_flow,
+                                match_mask, match_value,
+                                items, tunnel,
+                                group);
+                last_item = tunnel ? (MLX5_FLOW_LAYER_INNER_L2 |
+                              MLX5_FLOW_LAYER_INNER_VLAN) :
+                             (MLX5_FLOW_LAYER_OUTER_L2 |
+                              MLX5_FLOW_LAYER_OUTER_VLAN);
+                break;*/
+            case RTE_FLOW_ITEM_TYPE_IPV4:
+
+                dbg("IPV4\n");
+                mlx5_flow_tunnel_ip_check(items, next_protocol,
+                              &item_flags, &tunnel);
+
+            dbg("IPV4 set mm %p, mv %p",match_mask, match_value);
+                flow_dv_translate_item_ipv4(match_mask, match_value,
+                                items, tunnel,
+                                group);
+                last_item = tunnel ? MLX5_FLOW_LAYER_INNER_L3_IPV4 :
+                             MLX5_FLOW_LAYER_OUTER_L3_IPV4;
+                if (items->mask != NULL &&
+                    ((const struct rte_flow_item_ipv4 *)
+                     items->mask)->hdr.next_proto_id) {
+                    next_protocol =
+                        ((const struct rte_flow_item_ipv4 *)
+                         (items->spec))->hdr.next_proto_id;
+                    next_protocol &=
+                        ((const struct rte_flow_item_ipv4 *)
+                         (items->mask))->hdr.next_proto_id;
+                } else {
+                    /* Reset for inner layer. */
+                    next_protocol = 0xff;
+                }
+                break;
+            case RTE_FLOW_ITEM_TYPE_IPV6:
+
+                dbg("IPV6\n");
+
+                mlx5_flow_tunnel_ip_check(items, next_protocol,
+                              &item_flags, &tunnel);
+                flow_dv_translate_item_ipv6(match_mask, match_value,
+                                items, tunnel,
+                                group);
+                last_item = tunnel ? MLX5_FLOW_LAYER_INNER_L3_IPV6 :
+                             MLX5_FLOW_LAYER_OUTER_L3_IPV6;
+                if (items->mask != NULL &&
+                    ((const struct rte_flow_item_ipv6 *)
+                     items->mask)->hdr.proto) {
+                    next_protocol =
+                        ((const struct rte_flow_item_ipv6 *)
+                         items->spec)->hdr.proto;
+                    next_protocol &=
+                        ((const struct rte_flow_item_ipv6 *)
+                         items->mask)->hdr.proto;
+                } else {
+                    /* Reset for inner layer. */
+                    next_protocol = 0xff;
+                }
+                break;
+            case RTE_FLOW_ITEM_TYPE_TCP:
+
+                dbg("TCP\n");
+                flow_dv_translate_item_tcp(match_mask, match_value,
+                               items, tunnel);
+                last_item = tunnel ? MLX5_FLOW_LAYER_INNER_L4_TCP :
+                             MLX5_FLOW_LAYER_OUTER_L4_TCP;
+                break;
+            case RTE_FLOW_ITEM_TYPE_UDP:
+
+                dbg("UDP\n");
+                flow_dv_translate_item_udp(match_mask, match_value,
+                               items, tunnel);
+                last_item = tunnel ? MLX5_FLOW_LAYER_INNER_L4_UDP :
+                             MLX5_FLOW_LAYER_OUTER_L4_UDP;
+                break;
+    /*		case RTE_FLOW_ITEM_TYPE_GRE:
+                flow_dv_translate_item_gre(match_mask, match_value,
+                               items, tunnel);
+                matcher.priority = MLX5_TUNNEL_PRIO_GET(rss_desc);
+                last_item = MLX5_FLOW_LAYER_GRE;
+                break;
+            case RTE_FLOW_ITEM_TYPE_GRE_KEY:
+                flow_dv_translate_item_gre_key(match_mask,
+                                   match_value, items);
+                last_item = MLX5_FLOW_LAYER_GRE_KEY;
+                break;
+            case RTE_FLOW_ITEM_TYPE_NVGRE:
+                flow_dv_translate_item_nvgre(match_mask, match_value,
+                                 items, tunnel);
+                matcher.priority = MLX5_TUNNEL_PRIO_GET(rss_desc);
+                last_item = MLX5_FLOW_LAYER_GRE;
+                break;
+            case RTE_FLOW_ITEM_TYPE_VXLAN:
+                flow_dv_translate_item_vxlan(match_mask, match_value,
+                                 items, tunnel);
+                matcher.priority = MLX5_TUNNEL_PRIO_GET(rss_desc);
+                last_item = MLX5_FLOW_LAYER_VXLAN;
+                break;
+            case RTE_FLOW_ITEM_TYPE_VXLAN_GPE:
+                flow_dv_translate_item_vxlan_gpe(match_mask,
+                                 match_value, items,
+                                 tunnel);
+                matcher.priority = MLX5_TUNNEL_PRIO_GET(rss_desc);
+                last_item = MLX5_FLOW_LAYER_VXLAN_GPE;
+                break;
+            case RTE_FLOW_ITEM_TYPE_GENEVE:
+                flow_dv_translate_item_geneve(match_mask, match_value,
+                                  items, tunnel);
+                matcher.priority = MLX5_TUNNEL_PRIO_GET(rss_desc);
+                last_item = MLX5_FLOW_LAYER_GENEVE;
+                break;
+            case RTE_FLOW_ITEM_TYPE_MPLS:
+                flow_dv_translate_item_mpls(match_mask, match_value,
+                                items, last_item, tunnel);
+                matcher.priority = MLX5_TUNNEL_PRIO_GET(rss_desc);
+                last_item = MLX5_FLOW_LAYER_MPLS;
+                break;
+            case RTE_FLOW_ITEM_TYPE_MARK:
+                flow_dv_translate_item_mark(dev, match_mask,
+                                match_value, items);
+                last_item = MLX5_FLOW_ITEM_MARK;
+                break;
+            case RTE_FLOW_ITEM_TYPE_META:
+                flow_dv_translate_item_meta(dev, match_mask,
+                                match_value, attr, items);
+                last_item = MLX5_FLOW_ITEM_METADATA;
+                break;
+            case RTE_FLOW_ITEM_TYPE_ICMP:
+                flow_dv_translate_item_icmp(match_mask, match_value,
+                                items, tunnel);
+                last_item = MLX5_FLOW_LAYER_ICMP;
+                break;
+            case RTE_FLOW_ITEM_TYPE_ICMP6:
+                flow_dv_translate_item_icmp6(match_mask, match_value,
+                                  items, tunnel);
+                last_item = MLX5_FLOW_LAYER_ICMP6;
+                break;
+            case RTE_FLOW_ITEM_TYPE_TAG:
+                flow_dv_translate_item_tag(dev, match_mask,
+                               match_value, items);
+                last_item = MLX5_FLOW_ITEM_TAG;
+                break;
+            case MLX5_RTE_FLOW_ITEM_TYPE_TAG:
+                flow_dv_translate_mlx5_item_tag(dev, match_mask,
+                                match_value, items);
+                last_item = MLX5_FLOW_ITEM_TAG;
+                break;
+            case MLX5_RTE_FLOW_ITEM_TYPE_TX_QUEUE:
+                flow_dv_translate_item_tx_queue(dev, match_mask,
+                                match_value,
+                                items);
+                last_item = MLX5_FLOW_ITEM_TX_QUEUE;
+                break;
+            case RTE_FLOW_ITEM_TYPE_GTP:
+                flow_dv_translate_item_gtp(match_mask, match_value,
+                               items, tunnel);
+                matcher.priority = MLX5_TUNNEL_PRIO_GET(rss_desc);
+                last_item = MLX5_FLOW_LAYER_GTP;
+                break;
+            case RTE_FLOW_ITEM_TYPE_ECPRI:
+                if (!mlx5_flex_parser_ecpri_exist(dev)) {
+    //				Create it only the first time to be used.
+                    ret = mlx5_flex_parser_ecpri_alloc(dev);
+                    if (ret)
+                        return rte_flow_error_set
+                            (error, -ret,
+                            RTE_FLOW_ERROR_TYPE_ITEM,
+                            NULL,
+                            "cannot create eCPRI parser");
+                }
+                // Adjust the length matcher and device flow value.
+                matcher.mask.size = MLX5_ST_SZ_BYTES(fte_match_param);
+                dev_flow->dv.value.size =
+                        MLX5_ST_SZ_BYTES(fte_match_param);
+                flow_dv_translate_item_ecpri(dev, match_mask,
+                                 match_value, items);
+                // No other protocol should follow eCPRI layer.
+                last_item = MLX5_FLOW_LAYER_ECPRI;
+                break;*/
+            default:
+
+                dbg("unknown?\n");
+                break;
+            }
+            item_flags |= last_item;
+        } //switch
+
+
+
+        err = mlx5_flow_os_update_flow(dh->drv_flow,
+					       (void*)&value, -1,
+					       0);
+        err = 0;
+        dbg("Got err %d\n", err);
+		if (err) {
+			rte_flow_error_set(error, errno,
+					   RTE_FLOW_ERROR_TYPE_UNSPECIFIED,
+					   NULL,
+					   "hardware refuses to create flow");
+            return -1;
+		}
+/*		if (priv->vmwa_context &&
+		    dh->vf_vlan.tag && !dh->vf_vlan.created) {
+
+			mlx5_vlan_vmwa_acquire(dev, &dh->vf_vlan);
+		}*/
+
+
+    dbg("DV UPDATE FINISHED \n");
+	return 0;
+}
+
 
 /**
  * Release the flow matcher.
@@ -11207,6 +11503,8 @@ flow_dv_remove(struct rte_eth_dev *dev, struct rte_flow *flow)
 		return;
 	handle_idx = flow->dev_handles;
 	while (handle_idx) {
+
+        dbg("DESTROU Dev %p handle %d",dev,handle_idx);
 		dh = mlx5_ipool_get(priv->sh->ipool[MLX5_IPOOL_MLX5_FLOW],
 				    handle_idx);
 		if (!dh)
@@ -12628,6 +12926,7 @@ const struct mlx5_flow_driver_ops mlx5_flow_dv_drv_ops = {
 	.prepare = flow_dv_prepare,
 	.translate = flow_dv_translate,
 	.apply = flow_dv_apply,
+	.update = flow_dv_update,
 	.remove = flow_dv_remove,
 	.destroy = flow_dv_destroy,
 	.query = flow_dv_query,

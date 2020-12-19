@@ -40,7 +40,7 @@
 
 #define MAX_ITERATIONS             100
 #define DEFAULT_RULES_COUNT    4000000
-#define DEFAULT_RULES_BATCH     100000
+#define DEFAULT_RULES_BATCH        1000
 #define DEFAULT_GROUP                0
 
 struct rte_flow *flow;
@@ -57,9 +57,12 @@ static uint8_t items_idx, actions_idx, attrs_idx;
 static uint64_t ports_mask;
 static volatile bool force_quit;
 static bool dump_iterations;
+static bool update_flag;
+static bool update_atomic_flag;
 static bool delete_flag;
 static bool dump_socket_mem_flag;
 static bool enable_fwd;
+static bool install_target_rule;
 
 static struct rte_mempool *mbuf_mp;
 static uint32_t nb_lcores;
@@ -105,11 +108,15 @@ usage(char *progname)
 		" default is %d\n", DEFAULT_RULES_BATCH);
 	printf("  --dump-iterations: To print rates for each"
 		" iteration\n");
+	printf("  --update-rate: Enable update rate"
+		" calculations\n");
 	printf("  --deletion-rate: Enable deletion rate"
 		" calculations\n");
 	printf("  --dump-socket-mem: To dump all socket memory\n");
 	printf("  --enable-fwd: To enable packets forwarding"
 		" after insertion\n");
+	printf("  --install-target-rule: To install a target rule for"
+		" rule-based forwarding\n");
 	printf("  --portmask=N: hexadecimal bitmask of ports used\n");
 
 	printf("To set flow attributes:\n");
@@ -533,9 +540,12 @@ args_parse(int argc, char **argv)
 		{ "rules-count",                1, 0, 0 },
 		{ "rules-batch",                1, 0, 0 },
 		{ "dump-iterations",            0, 0, 0 },
+		{ "update-rate",                0, 0, 0 },
+		{ "update-atomic",         0, 0, 0 },
 		{ "deletion-rate",              0, 0, 0 },
 		{ "dump-socket-mem",            0, 0, 0 },
 		{ "enable-fwd",                 0, 0, 0 },
+		{ "install-target-rule",        0, 0, 0 },
 		{ "portmask",                   1, 0, 0 },
 		/* Attributes */
 		{ "ingress",                    0, 0, 0 },
@@ -733,6 +743,12 @@ args_parse(int argc, char **argv)
 					"dump-iterations") == 0)
 				dump_iterations = true;
 			if (strcmp(lgopts[opt_idx].name,
+					"update-rate") == 0)
+				update_flag = true;
+			if (strcmp(lgopts[opt_idx].name,
+					"update-atomic") == 0)
+				update_atomic_flag = true;
+			if (strcmp(lgopts[opt_idx].name,
 					"deletion-rate") == 0)
 				delete_flag = true;
 			if (strcmp(lgopts[opt_idx].name,
@@ -741,6 +757,9 @@ args_parse(int argc, char **argv)
 			if (strcmp(lgopts[opt_idx].name,
 					"enable-fwd") == 0)
 				enable_fwd = true;
+			if (strcmp(lgopts[opt_idx].name,
+					"install-target-rule") == 0)
+				install_target_rule = true;
 			if (strcmp(lgopts[opt_idx].name,
 					"portmask") == 0) {
 				/* parse hexadecimal string */
@@ -818,11 +837,94 @@ dump_socket_mem(FILE *f)
 }
 
 static void
-print_flow_error(struct rte_flow_error error)
+print_flow_error(const uint32_t rule_nb, struct rte_flow_error error)
 {
-	printf("Flow can't be created %d message: %s\n",
-		error.type,
+	printf("Flow rule %" PRIu32 " can't be created %d message: %s\n",
+		rule_nb, error.type,
 		error.message ? error.message : "(no stated reason)");
+}
+
+static inline void
+update_flows(int port_id, struct rte_flow **flow_list)
+{
+	struct rte_flow_error error;
+	clock_t start_iter, end_iter;
+    double cpu_time_used = 0;
+	double flows_rate;
+	double cpu_time_per_iter[MAX_ITERATIONS];
+	double delta;
+	uint32_t i;
+	int iter_id;
+
+	for (i = 0; i < MAX_ITERATIONS; i++)
+		cpu_time_per_iter[i] = -1;
+
+    int tot = rules_count;
+
+    int max = rules_batch;
+	/* Update Rate */
+	printf("\n%d Flows Update on port = %d, max %d, atomic = %d\n", max, port_id, max, update_atomic_flag);
+	start_iter = clock();
+    int base = (flow_group > 0?1:0);
+	for (i = 0 ; i < tot ; i++) {
+		if (flow_list[i] == 0) {
+            abort();
+        }
+
+		memset(&error, 0x33, sizeof(error));
+        int x = (i % max) + base ;
+        if (update_atomic_flag) {
+            if (update_flow(flow_list[x], port_id,
+                    flow_group,
+                    flow_attrs, flow_items, flow_actions,
+                    JUMP_ACTION_TABLE, i + rules_count + base,
+                    hairpin_queues_num,
+                    encap_data, decap_data, &error) != 0) {
+                print_flow_error(i, error);
+                rte_exit(EXIT_FAILURE, "Error in updating flow");
+            }
+        } else {
+            rte_flow_destroy(port_id, flow_list[x], &error);
+			flow_list[x] = generate_flow(port_id, flow_group,
+				flow_attrs, flow_items, flow_actions,
+				JUMP_ACTION_TABLE, i + rules_count + base,
+				hairpin_queues_num,
+				encap_data, decap_data,
+				&error);
+        }
+
+		if (i && !((i + 1) % rules_batch)) {
+			/* Save the update rate of each iter */
+			end_iter = clock();
+			delta = (double) (end_iter - start_iter);
+			iter_id = ((i + 1) / rules_batch) - 1;
+			cpu_time_per_iter[iter_id] =
+				delta / CLOCKS_PER_SEC;
+			cpu_time_used += cpu_time_per_iter[iter_id];
+			start_iter = clock();
+		}
+	}
+
+	/* Update rate per iteration */
+	if (dump_iterations)
+		for (i = 0; i < MAX_ITERATIONS; i++) {
+			if (cpu_time_per_iter[i] == -1)
+				continue;
+			delta = (double)(rules_batch /
+				cpu_time_per_iter[i]);
+			flows_rate = delta / 1000;
+			printf(":: Iteration #%d: %d flows "
+				"in %f sec[ Rate = %f K/Sec ]\n",
+				i, rules_batch,
+				cpu_time_per_iter[i], flows_rate);
+		}
+
+	/* Update rate for all flows */
+	flows_rate = ((double) (tot / cpu_time_used) / 1000);
+	printf("\n:: Total flow update rate -> %f K/Sec\n",
+		flows_rate);
+	printf(":: The time for updating %d flows %f seconds\n",
+	    max, cpu_time_used);
 }
 
 static inline void
@@ -852,7 +954,7 @@ destroy_flows(int port_id, struct rte_flow **flow_list)
 
 		memset(&error, 0x33, sizeof(error));
 		if (rte_flow_destroy(port_id, flow_list[i], &error)) {
-			print_flow_error(error);
+			print_flow_error(i, error);
 			rte_exit(EXIT_FAILURE, "Error in deleting flow");
 		}
 
@@ -946,11 +1048,24 @@ flows_handler(void)
 				flow_group, 0, 0, 0, 0, &error);
 
 			if (flow == NULL) {
-				print_flow_error(error);
+				print_flow_error(flow_index, error);
 				rte_exit(EXIT_FAILURE, "error in creating flow");
 			}
 			flow_list[flow_index++] = flow;
 		}
+
+		if (install_target_rule) {
+			flow = generate_target_flow(port_id, flow_group, &error);
+			if (flow == NULL) {
+				print_flow_error(flow_index, error);
+				rte_exit(EXIT_FAILURE, "error in creating flow");
+			}
+			flow_list[flow_index++] = flow;
+			printf(":: Target flow rule %d is installed on port: %d\n", flow_index, port_id);
+
+			// Isolate
+		}
+		printf("\n");
 
 		/* Insertion Rate */
 		printf("Flows insertion on port = %d\n", port_id);
@@ -962,15 +1077,14 @@ flows_handler(void)
 				hairpin_queues_num,
 				encap_data, decap_data,
 				&error);
-
-			if (force_quit)
-				i = rules_count;
-
 			if (!flow) {
-				print_flow_error(error);
+				print_flow_error(i, error);
 				rte_exit(EXIT_FAILURE, "error in creating flow");
 			}
 
+			if (force_quit)
+				i = rules_count;
+			// printf("Flows #%u inserted on port %d\n", flow_index, port_id);
 			flow_list[flow_index++] = flow;
 
 			if (i && !((i + 1) % rules_batch)) {
@@ -1005,6 +1119,9 @@ flows_handler(void)
 						flows_rate);
 		printf(":: The time for creating %d in flows %f seconds\n",
 						rules_count, cpu_time_used);
+
+		if (update_flag)
+			update_flows(port_id, flow_list);
 
 		if (delete_flag)
 			destroy_flows(port_id, flow_list);
@@ -1293,12 +1410,37 @@ init_port(void)
 	struct rte_eth_hairpin_conf hairpin_conf = {
 		.peer_count = 1,
 	};
+	/*
 	struct rte_eth_conf port_conf = {
 		.rx_adv_conf = {
 			.rss_conf.rss_hf =
 				GET_RSS_HF(),
 		}
 	};
+	*/
+	struct rte_fdir_conf fdir_conf = {
+		.mode = RTE_FDIR_MODE_NONE,
+		.pballoc = RTE_FDIR_PBALLOC_64K,
+		.status = RTE_FDIR_REPORT_STATUS,
+		.mask = {
+			.vlan_tci_mask = 0xFFEF,
+			.ipv4_mask     = {
+				.src_ip = 0xFFFFFFFF,
+				.dst_ip = 0xFFFFFFFF,
+			},
+			.ipv6_mask     = {
+				.src_ip = {0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF},
+				.dst_ip = {0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF},
+			},
+			.src_port_mask = 0xFFFF,
+			.dst_port_mask = 0xFFFF,
+			.mac_addr_byte_mask = 0xFF,
+			.tunnel_type_mask = 1,
+			.tunnel_id_mask = 0xFFFFFFFF,
+		},
+		.drop_queue = 127,
+	};
+	struct rte_eth_conf port_conf;
 	struct rte_eth_txconf txq_conf;
 	struct rte_eth_rxconf rxq_conf;
 	struct rte_eth_dev_info dev_info;
@@ -1317,6 +1459,21 @@ init_port(void)
 					rte_socket_id());
 	if (mbuf_mp == NULL)
 		rte_exit(EXIT_FAILURE, "Error: can't init mbuf pool\n");
+
+	port_conf.fdir_conf = fdir_conf;
+
+	if (nr_queues > 1) {
+		port_conf.rx_adv_conf.rss_conf.rss_key = NULL;
+		port_conf.rx_adv_conf.rss_conf.rss_hf =
+			GET_RSS_HF() & dev_info.flow_type_rss_offloads;
+	} else {
+		port_conf.rx_adv_conf.rss_conf.rss_key = NULL;
+		port_conf.rx_adv_conf.rss_conf.rss_hf = 0;
+	}
+
+	port_conf.rxmode.max_rx_pkt_len = 64;
+	port_conf.rxmode.max_lro_pkt_size = 64;
+	port_conf.rxmode.mq_mode = ETH_MQ_RX_RSS;
 
 	for (port_id = 0; port_id < nr_ports; port_id++) {
 		ret = rte_eth_dev_info_get(port_id, &dev_info);
@@ -1431,6 +1588,8 @@ main(int argc, char **argv)
 	dump_iterations = false;
 	rules_count = DEFAULT_RULES_COUNT;
 	rules_batch = DEFAULT_RULES_BATCH;
+	update_flag = false;
+    update_atomic_flag = false;
 	delete_flag = false;
 	dump_socket_mem_flag = false;
 	flow_group = DEFAULT_GROUP;

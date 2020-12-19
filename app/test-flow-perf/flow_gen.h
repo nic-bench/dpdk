@@ -24,7 +24,26 @@
 #define TRANSFER             FLOW_ATTR_MASK(2)
 
 struct rte_flow *
+generate_target_flow(uint16_t port_id,
+	uint16_t group,
+	struct rte_flow_error *error);
+
+struct rte_flow *
 generate_flow(uint16_t port_id,
+	uint16_t group,
+	uint64_t *flow_attrs,
+	uint64_t *flow_items,
+	uint64_t *flow_actions,
+	uint16_t next_table,
+	uint32_t outer_ip_src,
+	uint16_t hairpinq,
+	uint64_t encap_data,
+	uint64_t decap_data,
+	struct rte_flow_error *error);
+
+int
+update_flow(struct rte_flow *flow,
+	uint16_t port_id,
 	uint16_t group,
 	uint64_t *flow_attrs,
 	uint64_t *flow_items,

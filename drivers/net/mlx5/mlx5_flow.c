@@ -629,6 +629,7 @@ mlx5_flow_tunnel_get_restore_info(struct rte_eth_dev *dev,
 static const struct rte_flow_ops mlx5_flow_ops = {
 	.validate = mlx5_flow_validate,
 	.create = mlx5_flow_create,
+	.update = mlx5_flow_update,
 	.destroy = mlx5_flow_destroy,
 	.flush = mlx5_flow_flush,
 	.isolate = mlx5_flow_isolate,
@@ -2079,11 +2080,11 @@ mlx5_flow_validate_item_ipv6(const struct rte_flow_item *item,
 	const uint64_t l4m = tunnel ? MLX5_FLOW_LAYER_INNER_L4 :
 				      MLX5_FLOW_LAYER_OUTER_L4;
 	int ret;
+
 	uint8_t next_proto = 0xFF;
 	const uint64_t l2_vlan = (MLX5_FLOW_LAYER_L2 |
 				  MLX5_FLOW_LAYER_OUTER_VLAN |
 				  MLX5_FLOW_LAYER_INNER_VLAN);
-
 	if ((last_item & l2_vlan) && ether_type &&
 	    ether_type != RTE_ETHER_TYPE_IPV6)
 		return rte_flow_error_set(error, EINVAL,
@@ -2092,7 +2093,7 @@ mlx5_flow_validate_item_ipv6(const struct rte_flow_item *item,
 					  "which ether type is not IPv6");
 	if (mask && mask->hdr.proto == UINT8_MAX && spec)
 		next_proto = spec->hdr.proto;
-	if (item_flags & MLX5_FLOW_LAYER_IPV6_ENCAP) {
+       if (item_flags & MLX5_FLOW_LAYER_IPV6_ENCAP) {
 		if (next_proto == IPPROTO_IPIP || next_proto == IPPROTO_IPV6)
 			return rte_flow_error_set(error, EINVAL,
 						  RTE_FLOW_ERROR_TYPE_ITEM,
@@ -5316,6 +5317,7 @@ flow_list_create(struct rte_eth_dev *dev, uint32_t *list,
 				   idx);
 		p_actions_rx = actions_rx.actions;
 	}
+    flow->is_not_root = attr->group > 0;
 	flow_split_info.flow_idx = idx;
 	flow->drv_type = flow_get_drv_type(dev, attr);
 	MLX5_ASSERT(flow->drv_type > MLX5_FLOW_TYPE_MIN &&
@@ -5579,6 +5581,70 @@ mlx5_flow_create(struct rte_eth_dev *dev,
 
 	return (void *)(uintptr_t)flow_list_create(dev, &priv->flows,
 				  attr, items, actions, true, error);
+}
+
+/**
+ * Update a flow.
+ *
+ * @see rte_flow_update()
+ * @see rte_flow_ops
+ */
+static int
+flow_drv_update(struct rte_eth_dev *dev,
+		 struct rte_flow* flow,
+		 const struct rte_flow_item items[],
+		 const struct rte_flow_action *actions,
+		 struct rte_flow_error *error)
+{
+    dbg("Update dev %p, flow %p, items %p, actions %p, err %p\n",dev,flow,items,actions,error);
+	struct mlx5_priv *priv = dev->data->dev_private;
+	const struct mlx5_flow_driver_ops *fops;
+
+	if (!flow) {
+        dbg("Could not find flow!\n");
+		return rte_flow_error_set(error, ENOENT,
+			  RTE_FLOW_ERROR_TYPE_UNSPECIFIED,
+			  NULL,
+			  "invalid flow handle");
+	}
+
+	DRV_LOG(INFO, "[MLX5-Driver] Flow update on port %u", dev->data->port_id);
+	enum mlx5_flow_drv_type ftype;
+    ftype = flow->drv_type;
+	fops = flow_get_drv_ops(ftype);
+
+    dbg("Calling update!\n");
+    int ret = fops->update(dev, flow, items, error);
+
+    return ret;
+}
+
+/**
+ * Update a flow.
+ *
+ * @see rte_flow_update()
+ * @see rte_flow_ops
+ */
+int
+mlx5_flow_update(struct rte_eth_dev *dev,
+		 struct rte_flow *flow,
+		 const struct rte_flow_item items[],
+		 const struct rte_flow_action actions[],
+		 struct rte_flow_error *error)
+{
+	int ret;
+	struct mlx5_priv *priv = dev->data->dev_private;
+    dbg("MLX 5 flow update\n");
+	struct rte_flow *in_flow = mlx5_ipool_get(priv->sh->ipool
+					       [MLX5_IPOOL_RTE_FLOW], (uintptr_t)(void *)flow);
+    if (!in_flow)
+        return -EINVAL;
+	ret = flow_drv_update(dev, in_flow, items, actions, error);
+    dbg("DV DRV update finished\n");
+
+	if (ret < 0)
+		return ret;
+	return 0;
 }
 
 /**

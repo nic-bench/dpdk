@@ -71,6 +71,7 @@ enum index {
 	SHARED_ACTION,
 	VALIDATE,
 	CREATE,
+	UPDATE,
 	DESTROY,
 	FLUSH,
 	DUMP,
@@ -756,6 +757,15 @@ struct buffer {
 		struct {
 			int destroy;
 		} aged; /**< Aged arguments. */
+		struct {
+			uint32_t rule;
+			struct rte_flow_attr attr;
+			struct rte_flow_item *pattern;
+			struct rte_flow_action *actions;
+			uint32_t pattern_n;
+			uint32_t actions_n;
+			uint8_t *data;
+		} update; /**< Update arguments. */
 	} args; /**< Command arguments. */
 };
 
@@ -1860,6 +1870,7 @@ static const struct token token_list[] = {
 			     (SHARED_ACTION,
 			      VALIDATE,
 			      CREATE,
+			      UPDATE,
 			      DESTROY,
 			      FLUSH,
 			      DUMP,
@@ -1920,6 +1931,17 @@ static const struct token token_list[] = {
 		.help = "create a flow rule",
 		.next = NEXT(next_vc_attr, NEXT_ENTRY(PORT_ID)),
 		.args = ARGS(ARGS_ENTRY(struct buffer, port)),
+		.call = parse_vc,
+	},
+	[UPDATE] = {
+		.name = "update",
+		.help = "update specific flow rule",
+		.next = NEXT(next_vc_attr,
+			NEXT_ENTRY(RULE_ID),
+			NEXT_ENTRY(PORT_ID)),
+		.args = ARGS(ARGS_ENTRY(struct buffer, port),
+			ARGS_ENTRY(struct buffer, args.update.rule),
+			ARGS_ENTRY(struct buffer, port)),
 		.call = parse_vc,
 	},
 	[DESTROY] = {
@@ -4580,7 +4602,9 @@ parse_vc(struct context *ctx, const struct token *token,
 	if (!out)
 		return len;
 	if (!out->command) {
-		if (ctx->curr != VALIDATE && ctx->curr != CREATE)
+		if ((ctx->curr != VALIDATE) &&
+		    (ctx->curr != CREATE) &&
+		    (ctx->curr != UPDATE))
 			return -1;
 		if (sizeof(*out) > size)
 			return -1;
@@ -7295,6 +7319,11 @@ cmd_flow_parsed(const struct buffer *in)
 		port_flow_create(in->port, &in->args.vc.attr,
 				 in->args.vc.pattern, in->args.vc.actions,
 				 &in->args.vc.tunnel_ops);
+		break;
+	case UPDATE:
+		port_flow_update(in->port, in->args.update.rule,
+				in->args.vc.pattern,
+				in->args.vc.actions);
 		break;
 	case DESTROY:
 		port_flow_destroy(in->port, in->args.destroy.rule_n,

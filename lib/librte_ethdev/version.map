@@ -115,6 +115,7 @@ DPDK_21 {
 	rte_eth_xstats_reset;
 	rte_flow_copy;
 	rte_flow_create;
+	rte_flow_update;
 	rte_flow_destroy;
 	rte_flow_error_set;
 	rte_flow_flush;

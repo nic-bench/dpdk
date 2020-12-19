@@ -80,6 +80,31 @@ mlx5_flow_os_create_flow(void *matcher, void *match_value,
 }
 
 /**
+ * Update flow rule.
+ *
+ * @param[in] matcher
+ *   Pointer to match mask structure.
+ * @param[in] match_value
+ *   Pointer to match value structure.
+ * @param[in] num_actions
+ *   Number of actions in flow rule.
+ * @param[in] actions
+ *   Pointer to array of flow rule actions.
+ * @param[out] flow
+ *   Pointer to a valid flow rule object on success, NULL otherwise.
+ *
+ * @return
+ *   0 on success, or -1 on failure and errno is set.
+ */
+static inline int
+mlx5_flow_os_update_flow(void* drv_flow_ptr, void *match_value,
+			 size_t num_actions, void *actions[])
+{
+	return mlx5_glue->dv_update_flow(drv_flow_ptr, match_value,
+					  num_actions, actions);
+}
+
+/**
  * Destroy flow rule.
  *
  * @param[in] drv_flow_ptr

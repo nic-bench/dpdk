@@ -72,6 +72,26 @@ add_ipv4(struct rte_flow_item *items,
 	items[items_counter].mask = &ipv4_mask;
 }
 
+static void
+add_ipv4_target_flow(struct rte_flow_item *items,
+	uint8_t items_counter)
+{
+	// static struct sockaddr_in src_ip_pref;
+	static struct rte_flow_item_ipv4 ipv4_spec;
+	static struct rte_flow_item_ipv4 ipv4_mask;
+
+	memset(&ipv4_spec, 0, sizeof(struct rte_flow_item_ipv4));
+	memset(&ipv4_mask, 0, sizeof(struct rte_flow_item_ipv4));
+
+	// inet_aton("192.168.0.0", &src_ip_pref.sin_addr);
+	// ipv4_spec.hdr.src_addr = RTE_BE32(src_ip_pref.sin_addr.s_addr);
+	ipv4_spec.hdr.src_addr = RTE_IPV4(192, 168, 0, 0);
+	ipv4_mask.hdr.src_addr = RTE_BE32(0xffff0000);
+
+	items[items_counter].type = RTE_FLOW_ITEM_TYPE_IPV4;
+	items[items_counter].spec = &ipv4_spec;
+	items[items_counter].mask = &ipv4_mask;
+}
 
 static void
 add_ipv6(struct rte_flow_item *items,
@@ -340,6 +360,22 @@ add_icmpv6(struct rte_flow_item *items,
 	items[items_counter].type = RTE_FLOW_ITEM_TYPE_ICMP6;
 	items[items_counter].spec = &icmpv6_spec;
 	items[items_counter].mask = &icmpv6_mask;
+}
+
+void
+fill_target_flow_items(struct rte_flow_item *items)
+{
+	if (!items) {
+		return;
+	}
+
+	struct additional_para additional_para_data;
+
+	add_ether(items, 0, additional_para_data);
+	add_ipv4_target_flow(items, 1);
+	items[2].type = RTE_FLOW_ITEM_TYPE_END;
+
+	return;
 }
 
 void

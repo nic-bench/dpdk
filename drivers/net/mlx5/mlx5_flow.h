@@ -1034,6 +1034,7 @@ struct rte_flow {
 	/**< Device flow handles that are part of the flow. */
 	uint32_t drv_type:2; /**< Driver type. */
 	uint32_t tunnel:1;
+	uint32_t is_not_root:1;
 	uint32_t meter:16; /**< Holds flow meter id. */
 	uint32_t rix_mreg_copy;
 	/**< Index to metadata register copy table resource. */
@@ -1132,6 +1133,9 @@ typedef int (*mlx5_flow_translate_t)(struct rte_eth_dev *dev,
 				     struct rte_flow_error *error);
 typedef int (*mlx5_flow_apply_t)(struct rte_eth_dev *dev, struct rte_flow *flow,
 				 struct rte_flow_error *error);
+typedef int (*mlx5_flow_update_t)(struct rte_eth_dev *dev, struct rte_flow *flow,
+		         const struct rte_flow_item items[],
+				 struct rte_flow_error *error);
 typedef void (*mlx5_flow_remove_t)(struct rte_eth_dev *dev,
 				   struct rte_flow *flow);
 typedef void (*mlx5_flow_destroy_t)(struct rte_eth_dev *dev,
@@ -1201,6 +1205,7 @@ struct mlx5_flow_driver_ops {
 	mlx5_flow_prepare_t prepare;
 	mlx5_flow_translate_t translate;
 	mlx5_flow_apply_t apply;
+	mlx5_flow_update_t update;
 	mlx5_flow_remove_t remove;
 	mlx5_flow_destroy_t destroy;
 	mlx5_flow_query_t query;

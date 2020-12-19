@@ -3208,6 +3208,33 @@ rte_flow_create(uint16_t port_id,
 		struct rte_flow_error *error);
 
 /**
+ * Update an existing flow rule on a given port.
+ *
+ * @param port_id
+ *   Port identifier of Ethernet device.
+ * @param flow
+ *   Flow rule handle to update.
+ * @param[in] attr
+ *   Flow rule attributes.
+ * @param[in] pattern
+ *   Pattern specification (list terminated by the END pattern item).
+ * @param[in] actions
+ *   Associated actions (list terminated by the END action).
+ * @param[out] error
+ *   Perform verbose error reporting if not NULL. PMDs initialize this
+ *   structure in case of error only.
+ *
+ * @return
+ *   0 on success, a negative errno value otherwise and rte_errno is set.
+ */
+int
+rte_flow_update(uint16_t port_id,
+		struct rte_flow *flow,
+		const struct rte_flow_item pattern[],
+		const struct rte_flow_action actions[],
+		struct rte_flow_error *error);
+
+/**
  * Destroy a flow rule on a given port.
  *
  * Failure to destroy a flow rule handle may occur when other flow rules

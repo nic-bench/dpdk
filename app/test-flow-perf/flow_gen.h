@@ -39,6 +39,7 @@ generate_flow(uint16_t port_id,
 	uint16_t hairpinq,
 	uint64_t encap_data,
 	uint64_t decap_data,
+	uint64_t rss_flags,
 	struct rte_flow_error *error);
 
 int

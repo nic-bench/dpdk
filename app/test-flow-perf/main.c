@@ -55,6 +55,7 @@ static uint64_t flow_attrs[MAX_ATTRS_NUM];
 static uint8_t items_idx, actions_idx, attrs_idx;
 
 static uint64_t ports_mask;
+static uint64_t rss_flags;
 static volatile bool force_quit;
 static bool dump_iterations;
 static bool update_flag;
@@ -118,6 +119,8 @@ usage(char *progname)
 	printf("  --install-target-rule: To install a target rule for"
 		" rule-based forwarding\n");
 	printf("  --portmask=N: hexadecimal bitmask of ports used\n");
+	printf("  --rss-flags=N: set the RSS flags for the ports,"
+		" hexadecimal format, default is 0x%x\n", DEFAULT_RSS_HF);
 
 	printf("To set flow attributes:\n");
 	printf("  --ingress: set ingress attribute in flows\n");
@@ -204,6 +207,7 @@ static void
 args_parse(int argc, char **argv)
 {
 	uint64_t pm;
+	uint64_t rf;
 	char **argvopt;
 	char *token;
 	char *end;
@@ -547,6 +551,7 @@ args_parse(int argc, char **argv)
 		{ "enable-fwd",                 0, 0, 0 },
 		{ "install-target-rule",        0, 0, 0 },
 		{ "portmask",                   1, 0, 0 },
+		{ "rss-flags",                  1, 0, 0 },
 		/* Attributes */
 		{ "ingress",                    0, 0, 0 },
 		{ "egress",                     0, 0, 0 },
@@ -607,6 +612,7 @@ args_parse(int argc, char **argv)
 		ports_mask |= 1 << i;
 
 	hairpin_queues_num = 0;
+	rss_flags = DEFAULT_RSS_HF;
 	argvopt = argv;
 
 	printf(":: Flow -> ");
@@ -769,6 +775,16 @@ args_parse(int argc, char **argv)
 					rte_exit(EXIT_FAILURE, "Invalid fwd port mask\n");
 				ports_mask = pm;
 			}
+			if (strcmp(lgopts[opt_idx].name,
+					"rss-flags") == 0) {
+				/* parse hexadecimal string */
+				end = NULL;
+				rf = strtoull(optarg, &end, 16);
+				if ((optarg[0] == '\0') || (end == NULL) || (*end != '\0'))
+					rte_exit(EXIT_FAILURE, "Invalid rss flags\n");
+				rss_flags = rf;
+			}
+
 			break;
 		default:
 			fprintf(stderr, "Invalid option: %s\n", argv[optind]);
@@ -1045,7 +1061,7 @@ flows_handler(void)
 			 */
 			flow = generate_flow(port_id, 0, flow_attrs,
 				global_items, global_actions,
-				flow_group, 0, 0, 0, 0, &error);
+				flow_group, 0, 0, 0, 0, rss_flags, &error);
 
 			if (flow == NULL) {
 				print_flow_error(flow_index, error);
@@ -1076,6 +1092,7 @@ flows_handler(void)
 				JUMP_ACTION_TABLE, i,
 				hairpin_queues_num,
 				encap_data, decap_data,
+				rss_flags,
 				&error);
 			if (!flow) {
 				print_flow_error(i, error);
@@ -1414,7 +1431,7 @@ init_port(void)
 	struct rte_eth_conf port_conf = {
 		.rx_adv_conf = {
 			.rss_conf.rss_hf =
-				GET_RSS_HF(),
+				rss_flags,
 		}
 	};
 	*/

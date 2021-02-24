@@ -25,6 +25,8 @@
 /* Items/Actions parameters */
 #define JUMP_ACTION_TABLE 2
 #define VLAN_VALUE 1
+#define TCP_PORT 80
+#define UDP_PORT 53
 #define VNI_VALUE 1
 #define META_DATA 1
 #define TAG_INDEX 0

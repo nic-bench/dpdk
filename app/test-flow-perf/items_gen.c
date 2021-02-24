@@ -47,8 +47,9 @@ add_vlan(struct rte_flow_item *items,
 	memset(&vlan_mask, 0, sizeof(struct rte_flow_item_vlan));
 
 	vlan_spec.tci = RTE_BE16(vlan_value);
-	vlan_mask.tci = RTE_BE16(0xffff);
+	vlan_mask.tci = RTE_BE16(0x05ff);
 
+	printf("Added VLAN with id %i at index %i\n", vlan_value, items_counter);
 	items[items_counter].type = RTE_FLOW_ITEM_TYPE_VLAN;
 	items[items_counter].spec = &vlan_spec;
 	items[items_counter].mask = &vlan_mask;
@@ -67,6 +68,7 @@ add_ipv4(struct rte_flow_item *items,
 	ipv4_spec.hdr.src_addr = RTE_BE32(para.src_ip);
 	ipv4_mask.hdr.src_addr = RTE_BE32(0xffffffff);
 
+	printf("Added IPv4 with src %i at index %i\n",para.src_ip, items_counter);
 	items[items_counter].type = RTE_FLOW_ITEM_TYPE_IPV4;
 	items[items_counter].spec = &ipv4_spec;
 	items[items_counter].mask = &ipv4_mask;
@@ -127,6 +129,8 @@ add_tcp(struct rte_flow_item *items,
 	memset(&tcp_spec, 0, sizeof(struct rte_flow_item_tcp));
 	memset(&tcp_mask, 0, sizeof(struct rte_flow_item_tcp));
 
+	tcp_spec.hdr.src_port = TCP_PORT;
+	tcp_mask.hdr.src_port = 0xff;
 	items[items_counter].type = RTE_FLOW_ITEM_TYPE_TCP;
 	items[items_counter].spec = &tcp_spec;
 	items[items_counter].mask = &tcp_mask;
@@ -143,6 +147,8 @@ add_udp(struct rte_flow_item *items,
 	memset(&udp_spec, 0, sizeof(struct rte_flow_item_udp));
 	memset(&udp_mask, 0, sizeof(struct rte_flow_item_udp));
 
+	udp_spec.hdr.src_port = UDP_PORT;
+	udp_mask.hdr.src_port = 0xff;
 	items[items_counter].type = RTE_FLOW_ITEM_TYPE_UDP;
 	items[items_counter].spec = &udp_spec;
 	items[items_counter].mask = &udp_mask;

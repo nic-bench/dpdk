@@ -118,6 +118,91 @@ add_ipv6(struct rte_flow_item *items,
 }
 
 static void
+add_ah(struct rte_flow_item *items,
+	uint8_t items_counter,
+	struct additional_para para)
+{
+	static struct rte_flow_item_ah ah_spec;
+	static struct rte_flow_item_ah ah_mask;
+
+	uint16_t ah_value = para.src_ip;
+
+	memset(&ah_spec, 0, sizeof(struct rte_flow_item_ah));
+	memset(&ah_mask, 0, sizeof(struct rte_flow_item_ah));
+
+	ah_spec.spi = RTE_BE16(ah_value);
+	ah_mask.spi = RTE_BE16(0xffff);
+
+	items[items_counter].type = RTE_FLOW_ITEM_TYPE_AH;
+	items[items_counter].spec = &ah_spec;
+	items[items_counter].mask = &ah_mask;
+}
+
+static void
+add_esp(struct rte_flow_item *items,
+	uint8_t items_counter,
+	struct additional_para para)
+{
+	static struct rte_flow_item_esp esp_spec;
+	static struct rte_flow_item_esp esp_mask;
+
+	uint16_t esp_value = para.src_ip;
+
+	memset(&esp_spec, 0, sizeof(struct rte_flow_item_esp));
+	memset(&esp_mask, 0, sizeof(struct rte_flow_item_esp));
+
+	esp_spec.hdr.spi = RTE_BE16(esp_value);
+	esp_mask.hdr.spi = RTE_BE16(0xffff);
+
+	items[items_counter].type = RTE_FLOW_ITEM_TYPE_ESP;
+	items[items_counter].spec = &esp_spec;
+	items[items_counter].mask = &esp_mask;
+}
+
+static void
+add_pppoes(struct rte_flow_item *items,
+	uint8_t items_counter,
+	struct additional_para para)
+{
+	static struct rte_flow_item_pppoe pppoes_spec;
+	static struct rte_flow_item_pppoe pppoes_mask;
+
+	uint16_t pppoes_value = para.src_ip;
+
+	memset(&pppoes_spec, 0, sizeof(struct rte_flow_item_pppoe));
+	memset(&pppoes_mask, 0, sizeof(struct rte_flow_item_pppoe));
+
+	pppoes_spec.session_id = RTE_BE16(pppoes_value);
+	pppoes_mask.session_id = RTE_BE16(0xffff);
+
+	items[items_counter].type = RTE_FLOW_ITEM_TYPE_PPPOES;
+	items[items_counter].spec = &pppoes_spec;
+	items[items_counter].mask = &pppoes_mask;
+}
+
+static void
+add_l2tpv3oip(struct rte_flow_item *items,
+	uint8_t items_counter,
+	struct additional_para para)
+{
+	static struct rte_flow_item_l2tpv3oip l2tpv3oip_spec;
+	static struct rte_flow_item_l2tpv3oip l2tpv3oip_mask;
+
+	//uint16_t l2tpv3oip_value = l2tpv3oip_VALUE;
+	uint16_t l2tpv3oip_value = para.src_ip;
+
+	memset(&l2tpv3oip_spec, 0, sizeof(struct rte_flow_item_l2tpv3oip));
+	memset(&l2tpv3oip_mask, 0, sizeof(struct rte_flow_item_l2tpv3oip));
+
+	l2tpv3oip_spec.session_id = RTE_BE16(l2tpv3oip_value);
+	l2tpv3oip_mask.session_id = RTE_BE16(0xffff);
+
+	items[items_counter].type = RTE_FLOW_ITEM_TYPE_L2TPV3OIP;
+	items[items_counter].spec = &l2tpv3oip_spec;
+	items[items_counter].mask = &l2tpv3oip_mask;
+}
+
+static void
 add_tcp(struct rte_flow_item *items,
 	uint8_t items_counter,
 	__rte_unused struct additional_para para)
@@ -439,6 +524,22 @@ fill_items(struct rte_flow_item *items,
 		{
 			.mask = RTE_FLOW_ITEM_TYPE_VLAN,
 			.funct = add_vlan,
+		},
+		{
+			.mask = RTE_FLOW_ITEM_TYPE_ESP,
+			.funct = add_esp,
+		},
+		{
+			.mask = RTE_FLOW_ITEM_TYPE_AH,
+			.funct = add_ah,
+		},
+		{
+			.mask = RTE_FLOW_ITEM_TYPE_L2TPV3OIP,
+			.funct = add_l2tpv3oip,
+		},
+		{
+			.mask = RTE_FLOW_ITEM_TYPE_PPPOES,
+			.funct = add_pppoes,
 		},
 		{
 			.mask = RTE_FLOW_ITEM_TYPE_IPV4,

@@ -42,7 +42,7 @@
 #define DEFAULT_RULES_COUNT    4000000
 #define DEFAULT_RULES_BATCH       1000
 #define DEFAULT_GROUP                0
-#define DEFAULT_PRIORITY	     0
+#define DEFAULT_PRIORITY             0
 
 struct rte_flow *flow;
 static uint8_t flow_group;
@@ -136,7 +136,7 @@ usage(char *progname)
 	printf("  --group=N: set group for all flows,"
 		" default is %d\n", DEFAULT_GROUP);
 
-	printf("  --priority=N: set priorityfor all flows,"
+	printf("  --priority=N: set priority for all flows,"
 		" default is %d\n", DEFAULT_PRIORITY);
 
 
@@ -151,6 +151,10 @@ usage(char *progname)
 	printf("  --vxlan-gpe: add vxlan-gpe layer in flow items\n");
 	printf("  --gre: add gre layer in flow items\n");
 	printf("  --geneve: add geneve layer in flow items\n");
+	printf("  --ah: add AH layer in flow items\n");
+	printf("  --esp: add ESP layer in flow items\n");
+	printf("  --pppoes: add PPPoEs layer in flow items\n");
+	printf("  --l2tpv3oip: add l2tpv3oip layer in flow items\n");
 	printf("  --gtp: add gtp layer in flow items\n");
 	printf("  --gtpu: add gtp-u layer in flow items\n");
 	printf("  --meta: add meta layer in flow items\n");
@@ -256,6 +260,30 @@ args_parse(int argc, char **argv)
 		{
 			.str = "vlan",
 			.mask = FLOW_ITEM_MASK(RTE_FLOW_ITEM_TYPE_VLAN),
+			.map = &flow_items[0],
+			.map_idx = &items_idx
+		},
+		{
+			.str = "ah",
+			.mask = FLOW_ITEM_MASK(RTE_FLOW_ITEM_TYPE_AH),
+			.map = &flow_items[0],
+			.map_idx = &items_idx
+		},
+		{
+			.str = "esp",
+			.mask = FLOW_ITEM_MASK(RTE_FLOW_ITEM_TYPE_ESP),
+			.map = &flow_items[0],
+			.map_idx = &items_idx
+		},
+		{
+			.str = "pppoes",
+			.mask = FLOW_ITEM_MASK(RTE_FLOW_ITEM_TYPE_PPPOES),
+			.map = &flow_items[0],
+			.map_idx = &items_idx
+		},
+		{
+			.str = "l2tpv3oip",
+			.mask = FLOW_ITEM_MASK(RTE_FLOW_ITEM_TYPE_L2TPV3OIP),
 			.map = &flow_items[0],
 			.map_idx = &items_idx
 		},
@@ -582,6 +610,10 @@ args_parse(int argc, char **argv)
 		/* Items */
 		{ "ether",                      0, 0, 0 },
 		{ "vlan",                       0, 0, 0 },
+		{ "ah",                         0, 0, 0 },
+		{ "esp",                        0, 0, 0 },
+		{ "pppoes",                     0, 0, 0 },
+		{ "l2tpv3oip",                  0, 0, 0 },
 		{ "ipv4",                       0, 0, 0 },
 		{ "ipv6",                       0, 0, 0 },
 		{ "tcp",                        0, 0, 0 },
@@ -1547,18 +1579,19 @@ init_port(void)
 		port_conf.txmode.offloads &= dev_info.tx_offload_capa;
 		port_conf.rxmode.offloads &= dev_info.rx_offload_capa;
 
-		printf("Offloads would be  RX: 0x%lx, TX: 0x%lx. Applying disable mask 0x%lx"
+		printf("Offloads would be  RX: 0x%lx, TX: 0x%lx. Applying disable mask 0x%lx\n",
 		port_conf.rxmode.offloads,
 		port_conf.txmode.offloads,
-		~disable_capa);
+		disable_capa);
 
-		port_conf.txmode.offloads &= ~disable_capa;
-		port_conf.rxmode.offloads &= ~disable_capa;
-
-		printf("After mask, offloads are RX: 0x%lx, TX: 0x%lx\n",
-		port_conf.rxmode.offloads,
-		port_conf.txmode.offloads);
-
+		if (disable_capa != 0)
+		{
+			port_conf.txmode.offloads &= ~disable_capa;
+			port_conf.rxmode.offloads &= ~disable_capa;
+			printf("After mask, offloads are RX: 0x%lx, TX: 0x%lx\n",
+			port_conf.rxmode.offloads,
+			port_conf.txmode.offloads);
+		}
 		printf(":: initializing port: %d\n", port_id);
 
 		ret = rte_eth_dev_configure(port_id, nr_queues,

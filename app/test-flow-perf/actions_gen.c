@@ -62,7 +62,10 @@ add_mark(struct rte_flow_action *actions,
 	static struct rte_flow_action_mark mark_action;
 	uint32_t counter = para.counter;
 
-	mark_action.id = (counter % 255) + 1;
+    do {
+		/* Random values from 1 to 256 */
+		mark_action.id = (counter % 255) + 1;
+	} while (0);
 
 	actions[actions_counter].type = RTE_FLOW_ACTION_TYPE_MARK;
 	actions[actions_counter].conf = &mark_action;
@@ -491,7 +494,7 @@ add_set_ipv4_dscp(struct rte_flow_action *actions,
 	if (FIXED_VALUES)
 		dscp_value = 1;
 
-	/* Set dscp to random value each time */
+	/* Set dscp to r andom value each time */
 	dscp_value = dscp_value % 0xff;
 
 	set_dscp.dscp = dscp_value;

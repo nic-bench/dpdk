@@ -62,10 +62,7 @@ add_mark(struct rte_flow_action *actions,
 	static struct rte_flow_action_mark mark_action;
 	uint32_t counter = para.counter;
 
-	do {
-		/* Random values from 1 to 256 */
-		mark_action.id = (counter % 255) + 1;
-	} while (0);
+	mark_action.id = (counter % 255) + 1;
 
 	actions[actions_counter].type = RTE_FLOW_ACTION_TYPE_MARK;
 	actions[actions_counter].conf = &mark_action;

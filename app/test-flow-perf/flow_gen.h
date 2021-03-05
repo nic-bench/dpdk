@@ -25,12 +25,13 @@
 
 struct rte_flow *
 generate_target_flow(uint16_t port_id,
-	uint16_t group,
+	uint16_t group, uint16_t priority,
 	struct rte_flow_error *error);
 
 struct rte_flow *
 generate_flow(uint16_t port_id,
 	uint16_t group,
+	uint16_t priority,
 	uint64_t *flow_attrs,
 	uint64_t *flow_items,
 	uint64_t *flow_actions,
@@ -46,6 +47,7 @@ int
 update_flow(struct rte_flow *flow,
 	uint16_t port_id,
 	uint16_t group,
+	uint16_t priority,
 	uint64_t *flow_attrs,
 	uint64_t *flow_items,
 	uint64_t *flow_actions,

@@ -18,7 +18,7 @@
 
 static void
 fill_attributes(struct rte_flow_attr *attr,
-	uint64_t *flow_attrs, uint16_t group)
+	uint64_t *flow_attrs, uint16_t group, uint16_t priority)
 {
 	uint8_t i;
 	for (i = 0; i < MAX_ATTRS_NUM; i++) {
@@ -32,10 +32,11 @@ fill_attributes(struct rte_flow_attr *attr,
 			attr->transfer = 1;
 	}
 	attr->group = group;
+	attr->priority = priority;
 }
 
 static void
-fill_target_flow_attributes(struct rte_flow_attr *attr, uint16_t group)
+fill_target_flow_attributes(struct rte_flow_attr *attr, uint16_t group, uint16_t priority)
 {
 	if (!attr) {
 		return;
@@ -43,11 +44,12 @@ fill_target_flow_attributes(struct rte_flow_attr *attr, uint16_t group)
 
 	attr->ingress = 1;
 	attr->group = group;
+	attr->priority = priority;
 }
 
 struct rte_flow *
 generate_target_flow(uint16_t port_id,
-	uint16_t group,
+	uint16_t group, uint16_t priority,
 	struct rte_flow_error *error)
 {
 	struct rte_flow_attr attr;
@@ -59,7 +61,7 @@ generate_target_flow(uint16_t port_id,
 	memset(items, 0, sizeof(items));
 	memset(actions, 0, sizeof(actions));
 
-	fill_target_flow_attributes(&attr, group);
+	fill_target_flow_attributes(&attr, group, priority);
 	fill_target_flow_items(items);
 	fill_target_flow_actions(actions);
 
@@ -70,6 +72,7 @@ generate_target_flow(uint16_t port_id,
 struct rte_flow *
 generate_flow(uint16_t port_id,
 	uint16_t group,
+	uint16_t priority,
 	uint64_t *flow_attrs,
 	uint64_t *flow_items,
 	uint64_t *flow_actions,
@@ -90,7 +93,7 @@ generate_flow(uint16_t port_id,
 	memset(actions, 0, sizeof(actions));
 	memset(&attr, 0, sizeof(struct rte_flow_attr));
 
-	fill_attributes(&attr, flow_attrs, group);
+	fill_attributes(&attr, flow_attrs, group, priority);
 
 	fill_actions(actions, flow_actions,
 		outer_ip_src, next_table, hairpinq,
@@ -105,6 +108,7 @@ int
 update_flow(struct rte_flow *flow,
 	uint16_t port_id,
 	uint16_t group,
+	uint16_t priority,
 	uint64_t *flow_attrs,
 	uint64_t *flow_items,
 	uint64_t *flow_actions,

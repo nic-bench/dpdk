@@ -42,9 +42,11 @@
 #define DEFAULT_RULES_COUNT    4000000
 #define DEFAULT_RULES_BATCH       1000
 #define DEFAULT_GROUP                0
+#define DEFAULT_PRIORITY	     0
 
 struct rte_flow *flow;
 static uint8_t flow_group;
+static uint8_t flow_priority;
 
 static uint64_t encap_data;
 static uint64_t decap_data;
@@ -65,6 +67,7 @@ static bool delete_flag;
 static bool dump_socket_mem_flag;
 static bool enable_fwd;
 static bool install_target_rule;
+static bool disable_fdir_config;
 
 static struct rte_mempool *mbuf_mp;
 static uint32_t nb_lcores;
@@ -124,6 +127,7 @@ usage(char *progname)
 		" hexadecimal format, default is 0x%llx\n", DEFAULT_RSS_HF);
 	printf("  --disable-capa=N: device capabilities to disable,"
 		" hexadecimal format, default is 0x%x (enable all)\n", 0);
+	printf(" --disable-fdir-config: do not configure the fdir.\n");
 
 	printf("To set flow attributes:\n");
 	printf("  --ingress: set ingress attribute in flows\n");
@@ -131,6 +135,10 @@ usage(char *progname)
 	printf("  --transfer: set transfer attribute in flows\n");
 	printf("  --group=N: set group for all flows,"
 		" default is %d\n", DEFAULT_GROUP);
+
+	printf("  --priority=N: set priorityfor all flows,"
+		" default is %d\n", DEFAULT_PRIORITY);
+
 
 	printf("To set flow items:\n");
 	printf("  --ether: add ether layer in flow items\n");
@@ -557,11 +565,13 @@ args_parse(int argc, char **argv)
 		{ "portmask",                   1, 0, 0 },
 		{ "rss-flags",                  1, 0, 0 },
 		{ "disable-capa",               1, 0, 0 },
+		{ "disable-fdir-config",        0, 0, 0 },
 		/* Attributes */
 		{ "ingress",                    0, 0, 0 },
 		{ "egress",                     0, 0, 0 },
 		{ "transfer",                   0, 0, 0 },
 		{ "group",                      1, 0, 0 },
+		{ "priority",                   1, 0, 0 },
 		/* Items */
 		{ "ether",                      0, 0, 0 },
 		{ "vlan",                       0, 0, 0 },
@@ -619,6 +629,7 @@ args_parse(int argc, char **argv)
 	hairpin_queues_num = 0;
 	rss_flags = DEFAULT_RSS_HF;
 	disable_capa = 0;
+	disable_fdir_config = 0;
 	argvopt = argv;
 
 	printf(":: Flow -> ");
@@ -639,6 +650,15 @@ args_parse(int argc, char **argv)
 					rte_exit(EXIT_SUCCESS,
 						"flow group should be >= 0\n");
 				printf("group %d / ", flow_group);
+			}
+			if (strcmp(lgopts[opt_idx].name, "priority") == 0) {
+				n = atoi(optarg);
+				if (n >= 0)
+					flow_priority = n;
+				else
+					rte_exit(EXIT_SUCCESS,
+						"flow priority should be >= 0\n");
+				printf("priority %d / ", flow_priority);
 			}
 
 			for (i = 0; i < RTE_DIM(flow_options); i++)
@@ -796,6 +816,9 @@ args_parse(int argc, char **argv)
 					rte_exit(EXIT_FAILURE, "Invalid capabilities to disable\n");
 				disable_capa = dc;
 			}
+			if (strcmp(lgopts[opt_idx].name,
+					"disable-fdir-config") == 0)
+				disable_fdir_config = true;
 
 			break;
 		default:
@@ -903,7 +926,7 @@ update_flows(int port_id, struct rte_flow **flow_list)
         int x = (i % max) + base ;
         if (update_atomic_flag) {
             if (update_flow(flow_list[x], port_id,
-                    flow_group,
+                    flow_group, flow_priority,
                     flow_attrs, flow_items, flow_actions,
                     JUMP_ACTION_TABLE, i + rules_count + base,
                     hairpin_queues_num,
@@ -913,7 +936,7 @@ update_flows(int port_id, struct rte_flow **flow_list)
             }
         } else {
             rte_flow_destroy(port_id, flow_list[x], &error);
-			flow_list[x] = generate_flow(port_id, flow_group,
+			flow_list[x] = generate_flow(port_id, flow_group, flow_priority,
 				flow_attrs, flow_items, flow_actions,
 				JUMP_ACTION_TABLE, i + rules_count + base,
 				hairpin_queues_num,
@@ -1074,7 +1097,7 @@ flows_handler(void)
 			 */
 			flow = generate_flow(port_id, 0, flow_attrs,
 				global_items, global_actions,
-				flow_group, 0, 0, 0, 0, rss_flags, &error);
+				flow_group, flow_priority, 0, 0, 0, 0, rss_flags, &error);
 
 			if (flow == NULL) {
 				print_flow_error(flow_index, error);
@@ -1084,7 +1107,7 @@ flows_handler(void)
 		}
 
 		if (install_target_rule) {
-			flow = generate_target_flow(port_id, flow_group, &error);
+			flow = generate_target_flow(port_id, flow_group, flow_priority, &error);
 			if (flow == NULL) {
 				print_flow_error(flow_index, error);
 				rte_exit(EXIT_FAILURE, "error in creating flow");
@@ -1100,7 +1123,7 @@ flows_handler(void)
 		printf("Flows insertion on port = %d\n", port_id);
 		start_iter = clock();
 		for (i = 0; i < rules_count; i++) {
-			flow = generate_flow(port_id, flow_group,
+			flow = generate_flow(port_id, flow_group, flow_priority,
 				flow_attrs, flow_items, flow_actions,
 				JUMP_ACTION_TABLE, i,
 				hairpin_queues_num,
@@ -1440,14 +1463,12 @@ init_port(void)
 	struct rte_eth_hairpin_conf hairpin_conf = {
 		.peer_count = 1,
 	};
-	/*
 	struct rte_eth_conf port_conf = {
 		.rx_adv_conf = {
 			.rss_conf.rss_hf =
 				rss_flags,
 		}
 	};
-	*/
 	struct rte_fdir_conf fdir_conf = {
 		.mode = RTE_FDIR_MODE_NONE,
 		.pballoc = RTE_FDIR_PBALLOC_64K,
@@ -1470,7 +1491,6 @@ init_port(void)
 		},
 		.drop_queue = 127,
 	};
-	struct rte_eth_conf port_conf;
 	struct rte_eth_txconf txq_conf;
 	struct rte_eth_rxconf rxq_conf;
 	struct rte_eth_dev_info dev_info;
@@ -1489,21 +1509,24 @@ init_port(void)
 					rte_socket_id());
 	if (mbuf_mp == NULL)
 		rte_exit(EXIT_FAILURE, "Error: can't init mbuf pool\n");
+	
+	if(! disable_fdir_config)
+	{
+	    port_conf.fdir_conf = fdir_conf;
 
-	port_conf.fdir_conf = fdir_conf;
+	    if (nr_queues > 1) {
+		    port_conf.rx_adv_conf.rss_conf.rss_key = NULL;
+		    port_conf.rx_adv_conf.rss_conf.rss_hf =
+			    rss_flags & dev_info.flow_type_rss_offloads;
+	    } else {
+		    port_conf.rx_adv_conf.rss_conf.rss_key = NULL;
+		    port_conf.rx_adv_conf.rss_conf.rss_hf = 0;
+	    }
 
-	if (nr_queues > 1) {
-		port_conf.rx_adv_conf.rss_conf.rss_key = NULL;
-		port_conf.rx_adv_conf.rss_conf.rss_hf =
-			rss_flags & dev_info.flow_type_rss_offloads;
-	} else {
-		port_conf.rx_adv_conf.rss_conf.rss_key = NULL;
-		port_conf.rx_adv_conf.rss_conf.rss_hf = 0;
+	    port_conf.rxmode.max_rx_pkt_len = 64;
+	    port_conf.rxmode.max_lro_pkt_size = 64;
+	    port_conf.rxmode.mq_mode = ETH_MQ_RX_RSS;
 	}
-
-	port_conf.rxmode.max_rx_pkt_len = 64;
-	port_conf.rxmode.max_lro_pkt_size = 64;
-	port_conf.rxmode.mq_mode = ETH_MQ_RX_RSS;
 
 	for (port_id = 0; port_id < nr_ports; port_id++) {
 		ret = rte_eth_dev_info_get(port_id, &dev_info);
@@ -1635,6 +1658,7 @@ main(int argc, char **argv)
 	delete_flag = false;
 	dump_socket_mem_flag = false;
 	flow_group = DEFAULT_GROUP;
+	flow_priority = DEFAULT_PRIORITY;
 
 	signal(SIGINT, signal_handler);
 	signal(SIGTERM, signal_handler);

@@ -36,18 +36,19 @@ add_ether(struct rte_flow_item *items,
 static void
 add_vlan(struct rte_flow_item *items,
 	uint8_t items_counter,
-	__rte_unused struct additional_para para)
+	struct additional_para para)
 {
 	static struct rte_flow_item_vlan vlan_spec;
 	static struct rte_flow_item_vlan vlan_mask;
 
-	uint16_t vlan_value = VLAN_VALUE;
+	//uint16_t vlan_value = VLAN_VALUE;
+	uint16_t vlan_value = para.src_ip;
 
 	memset(&vlan_spec, 0, sizeof(struct rte_flow_item_vlan));
 	memset(&vlan_mask, 0, sizeof(struct rte_flow_item_vlan));
 
 	vlan_spec.tci = RTE_BE16(vlan_value);
-	vlan_mask.tci = RTE_BE16(0x05ff);
+	vlan_mask.tci = RTE_BE16(0xffff);
 
 	items[items_counter].type = RTE_FLOW_ITEM_TYPE_VLAN;
 	items[items_counter].spec = &vlan_spec;

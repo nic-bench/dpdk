@@ -285,6 +285,28 @@ add_gtp(struct rte_flow_item *items,
 }
 
 static void
+add_gtpu(struct rte_flow_item *items,
+	uint8_t items_counter,
+	__rte_unused struct additional_para para)
+{
+	static struct rte_flow_item_gtp gtpu_spec;
+	static struct rte_flow_item_gtp gtpu_mask;
+
+	uint32_t teid_value;
+
+	teid_value = TEID_VALUE;
+
+	memset(&gtpu_spec, 0, sizeof(struct rte_flow_item_gtp));
+	memset(&gtpu_mask, 0, sizeof(struct rte_flow_item_gtp));
+
+	gtpu_spec.teid = RTE_BE32(teid_value);
+	gtpu_mask.teid = RTE_BE32(0xffffffff);
+
+	items[items_counter].type = RTE_FLOW_ITEM_TYPE_GTPU;
+	items[items_counter].spec = &gtpu_spec;
+	items[items_counter].mask = &gtpu_mask;
+}
+static void
 add_meta_data(struct rte_flow_item *items,
 	uint8_t items_counter,
 	__rte_unused struct additional_para para)
@@ -452,6 +474,10 @@ fill_items(struct rte_flow_item *items,
 		{
 			.mask = RTE_FLOW_ITEM_TYPE_GTP,
 			.funct = add_gtp,
+		},
+		{
+			.mask = RTE_FLOW_ITEM_TYPE_GTPU,
+			.funct = add_gtpu,
 		},
 		{
 			.mask = RTE_FLOW_ITEM_TYPE_ICMP,

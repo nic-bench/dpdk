@@ -152,6 +152,7 @@ usage(char *progname)
 	printf("  --gre: add gre layer in flow items\n");
 	printf("  --geneve: add geneve layer in flow items\n");
 	printf("  --gtp: add gtp layer in flow items\n");
+	printf("  --gtpu: add gtp-u layer in flow items\n");
 	printf("  --meta: add meta layer in flow items\n");
 	printf("  --tag: add tag layer in flow items\n");
 	printf("  --icmpv4: add icmpv4 layer in flow items\n");
@@ -297,6 +298,12 @@ args_parse(int argc, char **argv)
 		{
 			.str = "gtp",
 			.mask = FLOW_ITEM_MASK(RTE_FLOW_ITEM_TYPE_GTP),
+			.map = &flow_items[0],
+			.map_idx = &items_idx
+		},
+		{
+			.str = "gtpu",
+			.mask = FLOW_ITEM_MASK(RTE_FLOW_ITEM_TYPE_GTPU),
 			.map = &flow_items[0],
 			.map_idx = &items_idx
 		},
@@ -584,6 +591,7 @@ args_parse(int argc, char **argv)
 		{ "gre",                        0, 0, 0 },
 		{ "geneve",                     0, 0, 0 },
 		{ "gtp",                        0, 0, 0 },
+		{ "gtpu",                       0, 0, 0 },
 		{ "meta",                       0, 0, 0 },
 		{ "tag",                        0, 0, 0 },
 		{ "icmpv4",                     0, 0, 0 },

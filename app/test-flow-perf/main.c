@@ -56,6 +56,7 @@ static uint8_t items_idx, actions_idx, attrs_idx;
 
 static uint64_t ports_mask;
 static uint64_t rss_flags;
+static uint64_t disable_capa;
 static volatile bool force_quit;
 static bool dump_iterations;
 static bool update_flag;
@@ -120,7 +121,9 @@ usage(char *progname)
 		" rule-based forwarding\n");
 	printf("  --portmask=N: hexadecimal bitmask of ports used\n");
 	printf("  --rss-flags=N: set the RSS flags for the ports,"
-		" hexadecimal format, default is 0x%x\n", DEFAULT_RSS_HF);
+		" hexadecimal format, default is 0x%llx\n", DEFAULT_RSS_HF);
+	printf("  --disable-capa=N: device capabilities to disable,"
+		" hexadecimal format, default is 0x%x (enable all)\n", 0);
 
 	printf("To set flow attributes:\n");
 	printf("  --ingress: set ingress attribute in flows\n");
@@ -208,6 +211,7 @@ args_parse(int argc, char **argv)
 {
 	uint64_t pm;
 	uint64_t rf;
+	uint64_t dc;
 	char **argvopt;
 	char *token;
 	char *end;
@@ -552,6 +556,7 @@ args_parse(int argc, char **argv)
 		{ "install-target-rule",        0, 0, 0 },
 		{ "portmask",                   1, 0, 0 },
 		{ "rss-flags",                  1, 0, 0 },
+		{ "disable-capa",               1, 0, 0 },
 		/* Attributes */
 		{ "ingress",                    0, 0, 0 },
 		{ "egress",                     0, 0, 0 },
@@ -613,6 +618,7 @@ args_parse(int argc, char **argv)
 
 	hairpin_queues_num = 0;
 	rss_flags = DEFAULT_RSS_HF;
+	disable_capa = 0;
 	argvopt = argv;
 
 	printf(":: Flow -> ");
@@ -781,6 +787,15 @@ args_parse(int argc, char **argv)
 					rte_exit(EXIT_FAILURE, "Invalid rss flags\n");
 				rss_flags = rf;
 			}
+			if (strcmp(lgopts[opt_idx].name,
+					"disable-capa") == 0) {
+				/* parse hexadecimal string */
+				end = NULL;
+				dc = strtoull(optarg, &end, 16);
+				if ((optarg[0] == '\0') || (end == NULL) || (*end != '\0'))
+					rte_exit(EXIT_FAILURE, "Invalid capabilities to disable\n");
+				disable_capa = dc;
+			}
 
 			break;
 		default:
@@ -903,6 +918,7 @@ update_flows(int port_id, struct rte_flow **flow_list)
 				JUMP_ACTION_TABLE, i + rules_count + base,
 				hairpin_queues_num,
 				encap_data, decap_data,
+				rss_flags,
 				&error);
         }
 
@@ -1479,7 +1495,7 @@ init_port(void)
 	if (nr_queues > 1) {
 		port_conf.rx_adv_conf.rss_conf.rss_key = NULL;
 		port_conf.rx_adv_conf.rss_conf.rss_hf =
-			GET_RSS_HF() & dev_info.flow_type_rss_offloads;
+			rss_flags & dev_info.flow_type_rss_offloads;
 	} else {
 		port_conf.rx_adv_conf.rss_conf.rss_key = NULL;
 		port_conf.rx_adv_conf.rss_conf.rss_hf = 0;
@@ -1499,6 +1515,18 @@ init_port(void)
 
 		port_conf.txmode.offloads &= dev_info.tx_offload_capa;
 		port_conf.rxmode.offloads &= dev_info.rx_offload_capa;
+
+		printf("Offloads would be  RX: 0x%lx, TX: 0x%lx. Applying disable mask 0x%lx"
+		port_conf.rxmode.offloads,
+		port_conf.txmode.offloads,
+		~disable_capa);
+
+		port_conf.txmode.offloads &= ~disable_capa;
+		port_conf.rxmode.offloads &= ~disable_capa;
+
+		printf("After mask, offloads are RX: 0x%lx, TX: 0x%lx\n",
+		port_conf.rxmode.offloads,
+		port_conf.txmode.offloads);
 
 		printf(":: initializing port: %d\n", port_id);
 

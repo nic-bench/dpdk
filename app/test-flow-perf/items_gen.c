@@ -49,7 +49,6 @@ add_vlan(struct rte_flow_item *items,
 	vlan_spec.tci = RTE_BE16(vlan_value);
 	vlan_mask.tci = RTE_BE16(0x05ff);
 
-	printf("Added VLAN with id %i at index %i\n", vlan_value, items_counter);
 	items[items_counter].type = RTE_FLOW_ITEM_TYPE_VLAN;
 	items[items_counter].spec = &vlan_spec;
 	items[items_counter].mask = &vlan_mask;
@@ -68,7 +67,6 @@ add_ipv4(struct rte_flow_item *items,
 	ipv4_spec.hdr.src_addr = RTE_BE32(para.src_ip);
 	ipv4_mask.hdr.src_addr = RTE_BE32(0xffffffff);
 
-	printf("Added IPv4 with src %i at index %i\n",para.src_ip, items_counter);
 	items[items_counter].type = RTE_FLOW_ITEM_TYPE_IPV4;
 	items[items_counter].spec = &ipv4_spec;
 	items[items_counter].mask = &ipv4_mask;

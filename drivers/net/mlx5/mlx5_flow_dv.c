@@ -10033,7 +10033,7 @@ flow_dv_translate(struct rte_eth_dev *dev,
 						(error, errno,
 						 RTE_FLOW_ERROR_TYPE_ACTION,
 						 NULL,
-						 "cannot create jump action.");
+						 "cannot create jump action, table does not exist.");
 			if (flow_dv_jump_tbl_resource_register
 			    (dev, tbl, dev_flow, error)) {
 				flow_dv_tbl_resource_release(MLX5_SH(dev), tbl);
@@ -10041,7 +10041,7 @@ flow_dv_translate(struct rte_eth_dev *dev,
 						(error, errno,
 						 RTE_FLOW_ERROR_TYPE_ACTION,
 						 NULL,
-						 "cannot create jump action.");
+						 "cannot create jump action, cannot register ressource.");
 			}
 			dev_flow->dv.actions[actions_n++] =
 					dev_flow->dv.jump->action;

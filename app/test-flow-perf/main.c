@@ -40,7 +40,7 @@
 
 #define MAX_ITERATIONS             100
 #define DEFAULT_RULES_COUNT    4000000
-#define DEFAULT_RULES_BATCH        1000
+#define DEFAULT_RULES_BATCH       1000
 #define DEFAULT_GROUP                0
 
 struct rte_flow *flow;
@@ -727,13 +727,10 @@ args_parse(int argc, char **argv)
 			if (strcmp(lgopts[opt_idx].name,
 					"rules-batch") == 0) {
 				n = atoi(optarg);
-				if (n >= DEFAULT_RULES_BATCH)
-					rules_batch = n;
-				else {
+				if (n < DEFAULT_RULES_BATCH)
 					printf("\n\nrules_batch should be >= %d\n",
 						DEFAULT_RULES_BATCH);
-					rte_exit(EXIT_SUCCESS, " ");
-				}
+				rules_batch = n;
 			}
 			if (strcmp(lgopts[opt_idx].name,
 					"rules-count") == 0) {

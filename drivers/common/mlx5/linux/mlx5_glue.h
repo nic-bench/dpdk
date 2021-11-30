@@ -26,7 +26,8 @@
 #define MLX5_GLUE_VERSION ""
 #endif
 
-#define dbg(args...)
+//#define dbg(...) printf(__VA_ARGS__)
+#define dbg(...) while(0) {}
 
 #ifndef HAVE_IBV_DEVICE_COUNTERS_SET_V42
 struct ibv_counter_set;

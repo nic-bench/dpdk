@@ -623,8 +623,19 @@ mlx5_glue_dv_update_flow(void *flow_id,
 			 void *actions[])
 {
 #ifdef HAVE_MLX5DV_DR
-	return mlx5dv_dr_rule_update(flow_id, match_value, num_actions,
-				     (struct mlx5dv_dr_action **)actions);
+#   ifdef HAVE_MLX5_DR_FLOW_UPDATE
+#	pragma message "Compiling mlx5 driver with rule update support"
+		return mlx5dv_dr_rule_update(flow_id, match_value, num_actions,
+						 (struct mlx5dv_dr_action **)actions);
+#   else
+#	pragma message "Compiling mlx5 driver without rule update support."
+	// We don't want compilation to fail if update action is not implemented.
+	(void)flow_id;
+	(void)match_value;
+	(void)num_actions;
+    (void)actions;
+	return -1;
+#   endif
 #else
 	(void)flow_id;
 	(void)match_value;

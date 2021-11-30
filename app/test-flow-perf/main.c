@@ -127,7 +127,7 @@ usage(char *progname)
 		" hexadecimal format, default is 0x%llx\n", DEFAULT_RSS_HF);
 	printf("  --disable-capa=N: device capabilities to disable,"
 		" hexadecimal format, default is 0x%x (enable all)\n", 0);
-	printf(" --disable-fdir-config: do not configure the fdir.\n");
+	printf("  --disable-fdir-config: do not configure the fdir.\n");
 
 	printf("To set flow attributes:\n");
 	printf("  --ingress: set ingress attribute in flows\n");
@@ -793,10 +793,13 @@ args_parse(int argc, char **argv)
 			if (strcmp(lgopts[opt_idx].name,
 					"rules-batch") == 0) {
 				n = atoi(optarg);
-				if (n < DEFAULT_RULES_BATCH)
+				if (n >= DEFAULT_RULES_BATCH)
+					rules_batch = n;
+				else {
 					printf("\n\nrules_batch should be >= %d\n",
 						DEFAULT_RULES_BATCH);
-				rules_batch = n;
+					rte_exit(EXIT_SUCCESS, " ");
+				}
 			}
 			if (strcmp(lgopts[opt_idx].name,
 					"rules-count") == 0) {
@@ -950,7 +953,7 @@ update_flows(int port_id, struct rte_flow **flow_list)
 	for (i = 0; i < MAX_ITERATIONS; i++)
 		cpu_time_per_iter[i] = -1;
 
-    int tot = rules_count;
+    uint32_t tot = rules_count;
 
     int max = rules_batch;
 	/* Update Rate */
@@ -1135,9 +1138,11 @@ flows_handler(void)
 			 * group 0 eth / end actions jump group <flow_group>
 			 *
 			 */
-			flow = generate_flow(port_id, 0, flow_attrs,
-				global_items, global_actions,
-				flow_group, flow_priority, 0, 0, 0, 0, rss_flags, &error);
+			flow = generate_flow(port_id, 0 , flow_priority,
+				flow_attrs, global_items, global_actions,
+				flow_group, 0, 0, 0, 0,
+				rss_flags,
+				&error);
 
 			if (flow == NULL) {
 				print_flow_error(flow_index, error);

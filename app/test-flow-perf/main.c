@@ -38,7 +38,7 @@
 #include "config.h"
 #include "flow_gen.h"
 
-#define MAX_ITERATIONS             100
+#define MAX_ITERATIONS          400000
 #define DEFAULT_RULES_COUNT    4000000
 #define DEFAULT_RULES_BATCH       1000
 #define DEFAULT_GROUP                0
@@ -791,25 +791,14 @@ args_parse(int argc, char **argv)
 			}
 			/* Control */
 			if (strcmp(lgopts[opt_idx].name,
-					"rules-batch") == 0) {
-				n = atoi(optarg);
-				if (n >= DEFAULT_RULES_BATCH)
-					rules_batch = n;
-				else {
-					printf("\n\nrules_batch should be >= %d\n",
-						DEFAULT_RULES_BATCH);
-					rte_exit(EXIT_SUCCESS, " ");
-				}
-			}
-			if (strcmp(lgopts[opt_idx].name,
 					"rules-count") == 0) {
-				n = atoi(optarg);
-				if (n >= (int) rules_batch)
-					rules_count = n;
-				else {
-					printf("\n\nrules_count should be >= %d\n",
-						rules_batch);
-				}
+				rules_count = atoi(optarg);
+			}
+
+
+			if (strcmp(lgopts[opt_idx].name,
+					"rules-batch") == 0) {
+				rules_batch = atoi(optarg);
 			}
 			if (strcmp(lgopts[opt_idx].name,
 					"dump-iterations") == 0)
@@ -870,6 +859,17 @@ args_parse(int argc, char **argv)
 			rte_exit(EXIT_SUCCESS, "Invalid option\n");
 			break;
 		}
+	}
+	if ( rules_count < rules_batch)
+	{
+		printf("\n\nrules-count cannot be < rules-batch!\n");
+		rte_exit(EXIT_SUCCESS, "rules-batch > rules-count");
+	}
+	if ( rules_count / rules_batch > MAX_ITERATIONS)
+	{
+		printf("\n\nCannot handle %i / %i = %i iterations! Reduce rules-count or increase rules-batch.\n",
+				rules_count, rules_batch, rules_count / rules_batch);
+		rte_exit(EXIT_SUCCESS, "Too many iterations\n");
 	}
 	printf("end_flow\n");
 }

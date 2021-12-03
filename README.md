@@ -1,8 +1,12 @@
-#DPDK with support for rte\_flow\_update
+# DPDK with support for rte\_flow\_update
 
 This repository contains the modified DPDK with support for the new API and testing options of test-flow-perf for our upcoming PAM'21 "NIC Bench" paper.
 
 The rte\_flow\_api avoids destroying and inserting rules. Internally it also reuses the parsed patterns. We implemented support for mlx5, that relies on a modified rdma-core library that similarly implements a more efficient update mechanism.
+
+The patch also add support for testing the update vs delete+insert in the flow perf benchmark.
+
+To compile, the MLX5 driver with support for update needs the backing API at https://github.com/nic-bench/rdma-core
 
 # Original DPDK README
 DPDK is a set of libraries and drivers for fast packet processing.

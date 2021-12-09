@@ -38,13 +38,15 @@
 #include "config.h"
 #include "flow_gen.h"
 
-#define MAX_ITERATIONS             100
+#define MAX_ITERATIONS          400000
 #define DEFAULT_RULES_COUNT    4000000
-#define DEFAULT_RULES_BATCH        1000
+#define DEFAULT_RULES_BATCH       1000
 #define DEFAULT_GROUP                0
+#define DEFAULT_PRIORITY             0
 
 struct rte_flow *flow;
 static uint8_t flow_group;
+static uint8_t flow_priority;
 
 static uint64_t encap_data;
 static uint64_t decap_data;
@@ -55,6 +57,8 @@ static uint64_t flow_attrs[MAX_ATTRS_NUM];
 static uint8_t items_idx, actions_idx, attrs_idx;
 
 static uint64_t ports_mask;
+static uint64_t rss_flags;
+static uint64_t disable_capa;
 static volatile bool force_quit;
 static bool dump_iterations;
 static bool update_flag;
@@ -63,6 +67,7 @@ static bool delete_flag;
 static bool dump_socket_mem_flag;
 static bool enable_fwd;
 static bool install_target_rule;
+static bool disable_fdir_config;
 
 static struct rte_mempool *mbuf_mp;
 static uint32_t nb_lcores;
@@ -118,6 +123,11 @@ usage(char *progname)
 	printf("  --install-target-rule: To install a target rule for"
 		" rule-based forwarding\n");
 	printf("  --portmask=N: hexadecimal bitmask of ports used\n");
+	printf("  --rss-flags=N: set the RSS flags for the ports,"
+		" hexadecimal format, default is 0x%llx\n", DEFAULT_RSS_HF);
+	printf("  --disable-capa=N: device capabilities to disable,"
+		" hexadecimal format, default is 0x%x (enable all)\n", 0);
+	printf("  --disable-fdir-config: do not configure the fdir.\n");
 
 	printf("To set flow attributes:\n");
 	printf("  --ingress: set ingress attribute in flows\n");
@@ -125,6 +135,10 @@ usage(char *progname)
 	printf("  --transfer: set transfer attribute in flows\n");
 	printf("  --group=N: set group for all flows,"
 		" default is %d\n", DEFAULT_GROUP);
+
+	printf("  --priority=N: set priority for all flows,"
+		" default is %d\n", DEFAULT_PRIORITY);
+
 
 	printf("To set flow items:\n");
 	printf("  --ether: add ether layer in flow items\n");
@@ -137,7 +151,12 @@ usage(char *progname)
 	printf("  --vxlan-gpe: add vxlan-gpe layer in flow items\n");
 	printf("  --gre: add gre layer in flow items\n");
 	printf("  --geneve: add geneve layer in flow items\n");
+	printf("  --ah: add AH layer in flow items\n");
+	printf("  --esp: add ESP layer in flow items\n");
+	printf("  --pppoes: add PPPoEs layer in flow items\n");
+	printf("  --l2tpv3oip: add l2tpv3oip layer in flow items\n");
 	printf("  --gtp: add gtp layer in flow items\n");
+	printf("  --gtpu: add gtp-u layer in flow items\n");
 	printf("  --meta: add meta layer in flow items\n");
 	printf("  --tag: add tag layer in flow items\n");
 	printf("  --icmpv4: add icmpv4 layer in flow items\n");
@@ -204,6 +223,8 @@ static void
 args_parse(int argc, char **argv)
 {
 	uint64_t pm;
+	uint64_t rf;
+	uint64_t dc;
 	char **argvopt;
 	char *token;
 	char *end;
@@ -239,6 +260,30 @@ args_parse(int argc, char **argv)
 		{
 			.str = "vlan",
 			.mask = FLOW_ITEM_MASK(RTE_FLOW_ITEM_TYPE_VLAN),
+			.map = &flow_items[0],
+			.map_idx = &items_idx
+		},
+		{
+			.str = "ah",
+			.mask = FLOW_ITEM_MASK(RTE_FLOW_ITEM_TYPE_AH),
+			.map = &flow_items[0],
+			.map_idx = &items_idx
+		},
+		{
+			.str = "esp",
+			.mask = FLOW_ITEM_MASK(RTE_FLOW_ITEM_TYPE_ESP),
+			.map = &flow_items[0],
+			.map_idx = &items_idx
+		},
+		{
+			.str = "pppoes",
+			.mask = FLOW_ITEM_MASK(RTE_FLOW_ITEM_TYPE_PPPOES),
+			.map = &flow_items[0],
+			.map_idx = &items_idx
+		},
+		{
+			.str = "l2tpv3oip",
+			.mask = FLOW_ITEM_MASK(RTE_FLOW_ITEM_TYPE_L2TPV3OIP),
 			.map = &flow_items[0],
 			.map_idx = &items_idx
 		},
@@ -281,6 +326,12 @@ args_parse(int argc, char **argv)
 		{
 			.str = "gtp",
 			.mask = FLOW_ITEM_MASK(RTE_FLOW_ITEM_TYPE_GTP),
+			.map = &flow_items[0],
+			.map_idx = &items_idx
+		},
+		{
+			.str = "gtpu",
+			.mask = FLOW_ITEM_MASK(RTE_FLOW_ITEM_TYPE_GTPU),
 			.map = &flow_items[0],
 			.map_idx = &items_idx
 		},
@@ -547,14 +598,22 @@ args_parse(int argc, char **argv)
 		{ "enable-fwd",                 0, 0, 0 },
 		{ "install-target-rule",        0, 0, 0 },
 		{ "portmask",                   1, 0, 0 },
+		{ "rss-flags",                  1, 0, 0 },
+		{ "disable-capa",               1, 0, 0 },
+		{ "disable-fdir-config",        0, 0, 0 },
 		/* Attributes */
 		{ "ingress",                    0, 0, 0 },
 		{ "egress",                     0, 0, 0 },
 		{ "transfer",                   0, 0, 0 },
 		{ "group",                      1, 0, 0 },
+		{ "priority",                   1, 0, 0 },
 		/* Items */
 		{ "ether",                      0, 0, 0 },
 		{ "vlan",                       0, 0, 0 },
+		{ "ah",                         0, 0, 0 },
+		{ "esp",                        0, 0, 0 },
+		{ "pppoes",                     0, 0, 0 },
+		{ "l2tpv3oip",                  0, 0, 0 },
 		{ "ipv4",                       0, 0, 0 },
 		{ "ipv6",                       0, 0, 0 },
 		{ "tcp",                        0, 0, 0 },
@@ -564,6 +623,7 @@ args_parse(int argc, char **argv)
 		{ "gre",                        0, 0, 0 },
 		{ "geneve",                     0, 0, 0 },
 		{ "gtp",                        0, 0, 0 },
+		{ "gtpu",                       0, 0, 0 },
 		{ "meta",                       0, 0, 0 },
 		{ "tag",                        0, 0, 0 },
 		{ "icmpv4",                     0, 0, 0 },
@@ -607,6 +667,9 @@ args_parse(int argc, char **argv)
 		ports_mask |= 1 << i;
 
 	hairpin_queues_num = 0;
+	rss_flags = DEFAULT_RSS_HF;
+	disable_capa = 0;
+	disable_fdir_config = 0;
 	argvopt = argv;
 
 	printf(":: Flow -> ");
@@ -627,6 +690,15 @@ args_parse(int argc, char **argv)
 					rte_exit(EXIT_SUCCESS,
 						"flow group should be >= 0\n");
 				printf("group %d / ", flow_group);
+			}
+			if (strcmp(lgopts[opt_idx].name, "priority") == 0) {
+				n = atoi(optarg);
+				if (n >= 0)
+					flow_priority = n;
+				else
+					rte_exit(EXIT_SUCCESS,
+						"flow priority should be >= 0\n");
+				printf("priority %d / ", flow_priority);
 			}
 
 			for (i = 0; i < RTE_DIM(flow_options); i++)
@@ -719,25 +791,14 @@ args_parse(int argc, char **argv)
 			}
 			/* Control */
 			if (strcmp(lgopts[opt_idx].name,
-					"rules-batch") == 0) {
-				n = atoi(optarg);
-				if (n >= DEFAULT_RULES_BATCH)
-					rules_batch = n;
-				else {
-					printf("\n\nrules_batch should be >= %d\n",
-						DEFAULT_RULES_BATCH);
-					rte_exit(EXIT_SUCCESS, " ");
-				}
-			}
-			if (strcmp(lgopts[opt_idx].name,
 					"rules-count") == 0) {
-				n = atoi(optarg);
-				if (n >= (int) rules_batch)
-					rules_count = n;
-				else {
-					printf("\n\nrules_count should be >= %d\n",
-						rules_batch);
-				}
+				rules_count = atoi(optarg);
+			}
+
+
+			if (strcmp(lgopts[opt_idx].name,
+					"rules-batch") == 0) {
+				rules_batch = atoi(optarg);
 			}
 			if (strcmp(lgopts[opt_idx].name,
 					"dump-iterations") == 0)
@@ -769,6 +830,28 @@ args_parse(int argc, char **argv)
 					rte_exit(EXIT_FAILURE, "Invalid fwd port mask\n");
 				ports_mask = pm;
 			}
+			if (strcmp(lgopts[opt_idx].name,
+					"rss-flags") == 0) {
+				/* parse hexadecimal string */
+				end = NULL;
+				rf = strtoull(optarg, &end, 16);
+				if ((optarg[0] == '\0') || (end == NULL) || (*end != '\0'))
+					rte_exit(EXIT_FAILURE, "Invalid rss flags\n");
+				rss_flags = rf;
+			}
+			if (strcmp(lgopts[opt_idx].name,
+					"disable-capa") == 0) {
+				/* parse hexadecimal string */
+				end = NULL;
+				dc = strtoull(optarg, &end, 16);
+				if ((optarg[0] == '\0') || (end == NULL) || (*end != '\0'))
+					rte_exit(EXIT_FAILURE, "Invalid capabilities to disable\n");
+				disable_capa = dc;
+			}
+			if (strcmp(lgopts[opt_idx].name,
+					"disable-fdir-config") == 0)
+				disable_fdir_config = true;
+
 			break;
 		default:
 			fprintf(stderr, "Invalid option: %s\n", argv[optind]);
@@ -776,6 +859,17 @@ args_parse(int argc, char **argv)
 			rte_exit(EXIT_SUCCESS, "Invalid option\n");
 			break;
 		}
+	}
+	if ( rules_count < rules_batch)
+	{
+		printf("\n\nrules-count cannot be < rules-batch!\n");
+		rte_exit(EXIT_SUCCESS, "rules-batch > rules-count");
+	}
+	if ( rules_count / rules_batch > MAX_ITERATIONS)
+	{
+		printf("\n\nCannot handle %i / %i = %i iterations! Reduce rules-count or increase rules-batch.\n",
+				rules_count, rules_batch, rules_count / rules_batch);
+		rte_exit(EXIT_SUCCESS, "Too many iterations\n");
 	}
 	printf("end_flow\n");
 }
@@ -859,7 +953,7 @@ update_flows(int port_id, struct rte_flow **flow_list)
 	for (i = 0; i < MAX_ITERATIONS; i++)
 		cpu_time_per_iter[i] = -1;
 
-    int tot = rules_count;
+    uint32_t tot = rules_count;
 
     int max = rules_batch;
 	/* Update Rate */
@@ -875,7 +969,7 @@ update_flows(int port_id, struct rte_flow **flow_list)
         int x = (i % max) + base ;
         if (update_atomic_flag) {
             if (update_flow(flow_list[x], port_id,
-                    flow_group,
+                    flow_group, flow_priority,
                     flow_attrs, flow_items, flow_actions,
                     JUMP_ACTION_TABLE, i + rules_count + base,
                     hairpin_queues_num,
@@ -885,11 +979,12 @@ update_flows(int port_id, struct rte_flow **flow_list)
             }
         } else {
             rte_flow_destroy(port_id, flow_list[x], &error);
-			flow_list[x] = generate_flow(port_id, flow_group,
+			flow_list[x] = generate_flow(port_id, flow_group, flow_priority,
 				flow_attrs, flow_items, flow_actions,
 				JUMP_ACTION_TABLE, i + rules_count + base,
 				hairpin_queues_num,
 				encap_data, decap_data,
+				rss_flags,
 				&error);
         }
 
@@ -1043,9 +1138,11 @@ flows_handler(void)
 			 * group 0 eth / end actions jump group <flow_group>
 			 *
 			 */
-			flow = generate_flow(port_id, 0, flow_attrs,
-				global_items, global_actions,
-				flow_group, 0, 0, 0, 0, &error);
+			flow = generate_flow(port_id, 0 , flow_priority,
+				flow_attrs, global_items, global_actions,
+				flow_group, 0, 0, 0, 0,
+				rss_flags,
+				&error);
 
 			if (flow == NULL) {
 				print_flow_error(flow_index, error);
@@ -1055,7 +1152,7 @@ flows_handler(void)
 		}
 
 		if (install_target_rule) {
-			flow = generate_target_flow(port_id, flow_group, &error);
+			flow = generate_target_flow(port_id, flow_group, flow_priority, &error);
 			if (flow == NULL) {
 				print_flow_error(flow_index, error);
 				rte_exit(EXIT_FAILURE, "error in creating flow");
@@ -1071,11 +1168,12 @@ flows_handler(void)
 		printf("Flows insertion on port = %d\n", port_id);
 		start_iter = clock();
 		for (i = 0; i < rules_count; i++) {
-			flow = generate_flow(port_id, flow_group,
+			flow = generate_flow(port_id, flow_group, flow_priority,
 				flow_attrs, flow_items, flow_actions,
 				JUMP_ACTION_TABLE, i,
 				hairpin_queues_num,
 				encap_data, decap_data,
+				rss_flags,
 				&error);
 			if (!flow) {
 				print_flow_error(i, error);
@@ -1410,14 +1508,12 @@ init_port(void)
 	struct rte_eth_hairpin_conf hairpin_conf = {
 		.peer_count = 1,
 	};
-	/*
 	struct rte_eth_conf port_conf = {
 		.rx_adv_conf = {
 			.rss_conf.rss_hf =
-				GET_RSS_HF(),
+				rss_flags,
 		}
 	};
-	*/
 	struct rte_fdir_conf fdir_conf = {
 		.mode = RTE_FDIR_MODE_NONE,
 		.pballoc = RTE_FDIR_PBALLOC_64K,
@@ -1440,7 +1536,6 @@ init_port(void)
 		},
 		.drop_queue = 127,
 	};
-	struct rte_eth_conf port_conf;
 	struct rte_eth_txconf txq_conf;
 	struct rte_eth_rxconf rxq_conf;
 	struct rte_eth_dev_info dev_info;
@@ -1459,21 +1554,24 @@ init_port(void)
 					rte_socket_id());
 	if (mbuf_mp == NULL)
 		rte_exit(EXIT_FAILURE, "Error: can't init mbuf pool\n");
+	
+	if(! disable_fdir_config)
+	{
+	    port_conf.fdir_conf = fdir_conf;
 
-	port_conf.fdir_conf = fdir_conf;
+	    if (nr_queues > 1) {
+		    port_conf.rx_adv_conf.rss_conf.rss_key = NULL;
+		    port_conf.rx_adv_conf.rss_conf.rss_hf =
+			    rss_flags & dev_info.flow_type_rss_offloads;
+	    } else {
+		    port_conf.rx_adv_conf.rss_conf.rss_key = NULL;
+		    port_conf.rx_adv_conf.rss_conf.rss_hf = 0;
+	    }
 
-	if (nr_queues > 1) {
-		port_conf.rx_adv_conf.rss_conf.rss_key = NULL;
-		port_conf.rx_adv_conf.rss_conf.rss_hf =
-			GET_RSS_HF() & dev_info.flow_type_rss_offloads;
-	} else {
-		port_conf.rx_adv_conf.rss_conf.rss_key = NULL;
-		port_conf.rx_adv_conf.rss_conf.rss_hf = 0;
+	    port_conf.rxmode.max_rx_pkt_len = 64;
+	    port_conf.rxmode.max_lro_pkt_size = 64;
+	    port_conf.rxmode.mq_mode = ETH_MQ_RX_RSS;
 	}
-
-	port_conf.rxmode.max_rx_pkt_len = 64;
-	port_conf.rxmode.max_lro_pkt_size = 64;
-	port_conf.rxmode.mq_mode = ETH_MQ_RX_RSS;
 
 	for (port_id = 0; port_id < nr_ports; port_id++) {
 		ret = rte_eth_dev_info_get(port_id, &dev_info);
@@ -1486,6 +1584,19 @@ init_port(void)
 		port_conf.txmode.offloads &= dev_info.tx_offload_capa;
 		port_conf.rxmode.offloads &= dev_info.rx_offload_capa;
 
+		printf("Offloads would be  RX: 0x%lx, TX: 0x%lx. Applying disable mask 0x%lx\n",
+		port_conf.rxmode.offloads,
+		port_conf.txmode.offloads,
+		disable_capa);
+
+		if (disable_capa != 0)
+		{
+			port_conf.txmode.offloads &= ~disable_capa;
+			port_conf.rxmode.offloads &= ~disable_capa;
+			printf("After mask, offloads are RX: 0x%lx, TX: 0x%lx\n",
+			port_conf.rxmode.offloads,
+			port_conf.txmode.offloads);
+		}
 		printf(":: initializing port: %d\n", port_id);
 
 		ret = rte_eth_dev_configure(port_id, nr_queues,
@@ -1593,6 +1704,7 @@ main(int argc, char **argv)
 	delete_flag = false;
 	dump_socket_mem_flag = false;
 	flow_group = DEFAULT_GROUP;
+	flow_priority = DEFAULT_PRIORITY;
 
 	signal(SIGINT, signal_handler);
 	signal(SIGTERM, signal_handler);

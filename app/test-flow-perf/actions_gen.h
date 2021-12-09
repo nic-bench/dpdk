@@ -21,6 +21,6 @@ void fill_target_flow_actions(struct rte_flow_action *actions);
 
 void fill_actions(struct rte_flow_action *actions, uint64_t *flow_actions,
 	uint32_t counter, uint16_t next_table, uint16_t hairpinq,
-	uint64_t encap_data, uint64_t decap_data);
+	uint64_t encap_data, uint64_t decap_data, uint64_t rss_flags);
 
 #endif /* FLOW_PERF_ACTION_GEN */

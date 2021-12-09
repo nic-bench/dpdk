@@ -5,7 +5,7 @@
 #define FLOW_ITEM_MASK(_x) (UINT64_C(1) << _x)
 #define FLOW_ACTION_MASK(_x) (UINT64_C(1) << _x)
 #define FLOW_ATTR_MASK(_x) (UINT64_C(1) << _x)
-#define GET_RSS_HF() (ETH_RSS_IP | ETH_RSS_TCP)
+#define DEFAULT_RSS_HF (ETH_RSS_IP | ETH_RSS_TCP)
 
 /* Configuration */
 #define RXQ_NUM 4
@@ -25,6 +25,8 @@
 /* Items/Actions parameters */
 #define JUMP_ACTION_TABLE 2
 #define VLAN_VALUE 1
+#define TCP_PORT 80
+#define UDP_PORT 53
 #define VNI_VALUE 1
 #define META_DATA 1
 #define TAG_INDEX 0

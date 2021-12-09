@@ -29,6 +29,7 @@ struct additional_para {
 	uint32_t counter;
 	uint64_t encap_data;
 	uint64_t decap_data;
+	uint64_t rss_flags;
 };
 
 /* Storage for struct rte_flow_action_raw_encap including external data. */
@@ -61,7 +62,7 @@ add_mark(struct rte_flow_action *actions,
 	static struct rte_flow_action_mark mark_action;
 	uint32_t counter = para.counter;
 
-	do {
+    do {
 		/* Random values from 1 to 256 */
 		mark_action.id = (counter % 255) + 1;
 	} while (0);
@@ -121,7 +122,7 @@ add_rss(struct rte_flow_action *actions,
 		.conf = (struct rte_flow_action_rss){
 			.func = RTE_ETH_HASH_FUNCTION_DEFAULT,
 			.level = 0,
-			.types = GET_RSS_HF(),
+			.types = para.rss_flags,
 			.key_len = sizeof(rss_data->key),
 			.queue_num = para.queues_number,
 			.key = rss_data->key,
@@ -493,7 +494,7 @@ add_set_ipv4_dscp(struct rte_flow_action *actions,
 	if (FIXED_VALUES)
 		dscp_value = 1;
 
-	/* Set dscp to random value each time */
+	/* Set dscp to r andom value each time */
 	dscp_value = dscp_value % 0xff;
 
 	set_dscp.dscp = dscp_value;
@@ -919,7 +920,7 @@ fill_target_flow_actions(struct rte_flow_action *actions)
 void
 fill_actions(struct rte_flow_action *actions, uint64_t *flow_actions,
 	uint32_t counter, uint16_t next_table, uint16_t hairpinq,
-	uint64_t encap_data, uint64_t decap_data)
+	uint64_t encap_data, uint64_t decap_data, uint64_t rss_flags)
 {
 	struct additional_para additional_para_data;
 	uint8_t actions_counter = 0;
@@ -941,6 +942,7 @@ fill_actions(struct rte_flow_action *actions, uint64_t *flow_actions,
 		.counter = counter,
 		.encap_data = encap_data,
 		.decap_data = decap_data,
+		.rss_flags = rss_flags,
 	};
 
 	if (hairpinq != 0) {
